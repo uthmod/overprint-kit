@@ -58,7 +58,7 @@
   .choice input { margin: 6px 0 0; accent-color: var(--gold); width: 18px; height: 18px; }
   .choice b { font-weight: 600; }
   .choice small { display: block; color: var(--muted); font-size: 16px; }
-  .status { min-height: 1.7em; margin: 0; font-weight: 600; }
+  .status { min-height: 1.7em; margin: -16px 0 0; font-weight: 600; }
   .status.err { color: var(--alert); }
   .result { display: grid; gap: 28px; min-width: 0; }
   .compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
@@ -126,7 +126,6 @@
         </div>
       </div>
 
-      <p class="status" id="status" role="status" aria-live="polite"></p>
     </section>
 
     <section class="result" aria-label="分色結果">
@@ -134,6 +133,7 @@
         <h2>印刷模擬</h2>
         <button class="btn" type="button" id="zoomBtn" aria-pressed="false">放大檢查</button>
       </div>
+      <p class="status" id="status" role="status" aria-live="polite">分色中…</p>
       <div class="compare" id="compare">
         <figure><figcaption>原圖 <span id="origSize"></span></figcaption><div class="frame" id="origFrame"><canvas id="origCanvas" width="1" height="1"></canvas></div></figure>
         <figure><figcaption>印刷模擬 <span id="proofSize"></span></figcaption><div class="frame" id="proofFrame"><canvas id="proofCanvas" width="1" height="1"></canvas></div></figure>
@@ -250,6 +250,9 @@ async function loadImage(src, name, stem) {
   const rgba = ctx.getImageData(0, 0, w, h).data, rgb = new Uint8Array(w * h * 3);
   for (let i = 0, j = 0; i < rgba.length; i += 4, j += 3) { rgb[j] = rgba[i]; rgb[j + 1] = rgba[i + 1]; rgb[j + 2] = rgba[i + 2]; }
   Object.assign(state, { rgb, w, h, stem });
+  const pc = $('proofCanvas'); // blank, in the image's shape, until the proof is ready
+  pc.width = w; pc.height = h;
+  $('proofSize').textContent = '';
   $('imageName').textContent = name;
   $('origSize').textContent = `${w} × ${h}`;
 }
