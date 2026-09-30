@@ -43,6 +43,11 @@ MIN_AREA = 12  # px at original size; smaller shapes (screentone dots, noise) ge
 FINE_PX = 11
 FINE_DE = 6.0
 FINE_MIN = 4  # px at original size; smaller pieces are grain
+# soft edges: a line pixel whose colour lies within BLEND_RGB of the mix of the two nearest shapes (within BLEND_R px)
+# prefers the closer shape's colour (the TIE_DE rule, like inside a shape), so an anti-aliased edge doesn't print a third,
+# darker ink (slivers at a low --penalty). An outline darker than both sides is no mix of them and keeps its own colour.
+BLEND_R = 3
+BLEND_RGB = 20.0
 N_INKS = np.array([max(bin(m).count("1") - 1, 0) for m in range(16)])  # paper and solo inks are free
 # halftone screens (--screen MASK:PCT): pixels labelled MASK print that mask's inks as dots instead of solid.
 # ponytail: plain round AM dots and no dot-gain curve. Riso dots gain ~10-20%, so ask for less than the tone you want.
@@ -130,6 +135,22 @@ def self_check(palette_paths):
     idx = labels(Image.fromarray(img), pal)[0]
     fill, dark = (np.bincount(idx[r * SCALE + 1, 30 * SCALE:60 * SCALE]).argmax() for r in (30, 45))
     assert to_lab(pal[dark])[0] < to_lab(pal[fill])[0] - 2, f"a dark 1-px line on colour {fill} came out as {dark}"
+    # a soft edge between two printable colours prints only those two, even at a low --penalty (no dark slivers)
+    global INK_PENALTY
+    saved, INK_PENALTY = INK_PENALTY, 3.0
+    try:
+        for n in palette_paths:
+            pal = palette(n)
+            for c1, c2 in [(1, 0), (2, 1), (4, 0), (8, 0), (1, 4)]:
+                img = np.full((90, 90, 3), pal[c2])
+                yy, xx = np.mgrid[:90, :90]
+                img[xx + 0.6 * yy < 70] = pal[c1]
+                img = cv2.GaussianBlur(img.astype(np.float32), (0, 0), 0.8)
+                img = np.clip(img + np.random.default_rng(0).normal(0, 1.5, img.shape), 0, 255).astype(np.uint8)
+                idx = labels(Image.fromarray(img), pal)[0]
+                assert np.isin(idx, [c1, c2]).all(), f"{Path(n).stem}: a soft edge between colours {c1} and {c2} prints a third colour"
+    finally:
+        INK_PENALTY = saved
     assert abs(screen(300, 300, 2, 0.4).mean() - 0.4) < 0.01, "a 40% screen does not cover 40%"
     print("self-check ok:", ", ".join(Path(n).stem for n in palette_paths))
 
@@ -151,7 +172,34 @@ def shape_colours(orig, pal):
     mean = np.stack([np.bincount(s, rgb[:, k], minlength=n) for k in range(3)], 1) / np.maximum(np.bincount(s, minlength=n), 1)[:, None]
     lbl = classify(mean[None], pal)[0][0].astype(np.int8)
     lbl[0] = -1
-    return lines, shape, lbl
+    return lines, shape, lbl, mean
+
+
+def edge_prefer(shape, mean, lbl, img, prefer):
+    """Soft edges (in place on prefer, at SCALE x): a line pixel between two shapes whose colour is a mix of theirs
+    prefers the nearer one's label."""
+    h, w = shape.shape
+    offs = sorted(((dy, dx) for dy in range(-BLEND_R, BLEND_R + 1) for dx in range(-BLEND_R, BLEND_R + 1)),
+                  key=lambda o: (o[0] ** 2 + o[1] ** 2, o[0], o[1]))
+    pad = np.pad(shape, BLEND_R)
+    near = [pad[BLEND_R + dy:BLEND_R + dy + h, BLEND_R + dx:BLEND_R + dx + w] for dy, dx in offs]
+    a = np.zeros_like(shape)
+    for s in near:  # the nearest shape
+        a = np.where(a == 0, s, a)
+    b = np.zeros_like(shape)
+    for s in near:  # and the nearest other one
+        b = np.where((b == 0) & (s != 0) & (s != a), s, b)
+    both = (shape == 0) & (a > 0) & (b > 0)
+    ys, xs = np.nonzero(np.repeat(np.repeat(both, SCALE, 0), SCALE, 1))
+    a, b = a[ys // SCALE, xs // SCALE], b[ys // SCALE, xs // SCALE]
+    p, ca, cb = img[ys, xs], mean[a], mean[b]
+    v0, v1, v2 = cb[:, 0] - ca[:, 0], cb[:, 1] - ca[:, 1], cb[:, 2] - ca[:, 2]
+    vv = v0 * v0 + v1 * v1 + v2 * v2
+    t = ((p[:, 0] - ca[:, 0]) * v0 + (p[:, 1] - ca[:, 1]) * v1 + (p[:, 2] - ca[:, 2]) * v2) / np.maximum(vv, 1e-9)
+    tc = np.clip(t, 0, 1)
+    d0, d1, d2 = p[:, 0] - (ca[:, 0] + tc * v0), p[:, 1] - (ca[:, 1] + tc * v1), p[:, 2] - (ca[:, 2] + tc * v2)
+    mix = (vv > 0) & (d0 * d0 + d1 * d1 + d2 * d2 < BLEND_RGB * BLEND_RGB)
+    prefer[ys[mix], xs[mix]] = np.where(t[mix] < 0.5, lbl[a[mix]], lbl[b[mix]])
 
 
 def fine_features(orig, img, pal, idx):
@@ -218,8 +266,10 @@ def labels(orig, pal):
     img = np.asarray(orig.resize((orig.width * SCALE, orig.height * SCALE), Image.LANCZOS), dtype=np.float64)
     h, w, _ = img.shape
     # lines keep their per-pixel colour, so thin features (outlines, a rope) survive as they did before shapes
-    lines, shape, lbl = shape_colours(orig, pal)
-    idx, de = classify(img, pal, lbl[cv2.resize(shape, (w, h), interpolation=cv2.INTER_NEAREST)])
+    lines, shape, lbl, mean = shape_colours(orig, pal)
+    prefer = lbl[cv2.resize(shape, (w, h), interpolation=cv2.INTER_NEAREST)]
+    edge_prefer(shape, mean, lbl, img, prefer)
+    idx, de = classify(img, pal, prefer)
     # ponytail: mode filter kills risograph grain speckle; raise the size if plates look noisy
     idx = np.array(Image.fromarray(idx, "L").filter(ImageFilter.ModeFilter(7)))
     fine_features(orig, img, pal, idx)

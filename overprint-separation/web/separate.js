@@ -9,6 +9,7 @@
   const INK_PENALTY = 8; // dE per extra overprinted ink for off-palette pixels (the Python --penalty)
   const L_WEIGHT = 0.3, EXACT_DE = 4, EDGE_DE = 3, TIE_DE = 12, MIN_AREA = 12;
   const FINE_PX = 11, FINE_DE = 6, FINE_MIN = 4;
+  const BLEND_R = 3, BLEND_RGB = 20; // soft edges: see edgePrefer
   const PREC = 1 << 22; // Pillow's fixed-point resample precision
   const bits = (m) => (m & 1) + ((m >> 1) & 1) + ((m >> 2) & 1) + ((m >> 3) & 1);
   const N_INKS = Array.from({ length: 16 }, (_, m) => Math.max(bits(m) - 1, 0)); // paper and solo inks are free
@@ -172,21 +173,64 @@
     return { notLine, shape, count };
   }
 
-  /** Each shape's printable colour from its mean colour; lines and tiny shapes get -1 (no preference). */
+  /** Each shape's printable colour from its mean colour; lines and tiny shapes get -1 (no preference). Also the means. */
   function shapeColours(rgb, shape, count, P, pen) {
     const sum = new Float64Array(count * 3), num = new Float64Array(count);
     for (let i = 0; i < shape.length; i++) {
       const s = shape[i]; num[s]++;
       sum[s * 3] += rgb[i * 3]; sum[s * 3 + 1] += rgb[i * 3 + 1]; sum[s * 3 + 2] += rgb[i * 3 + 2];
     }
-    const lbl = new Int8Array(count), t = [0, 0, 0];
+    const lbl = new Int8Array(count), mean = new Float64Array(count * 3), t = [0, 0, 0];
     for (let s = 0; s < count; s++) {
       const q = Math.max(num[s], 1);
-      labF(sum[s * 3] / q, sum[s * 3 + 1] / q, sum[s * 3 + 2] / q, t, 0);
+      mean[s * 3] = sum[s * 3] / q; mean[s * 3 + 1] = sum[s * 3 + 1] / q; mean[s * 3 + 2] = sum[s * 3 + 2] / q;
+      labF(mean[s * 3], mean[s * 3 + 1], mean[s * 3 + 2], t, 0);
       lbl[s] = nearest(t[0], t[1], t[2], P, pen, -1);
     }
     lbl[0] = -1;
-    return lbl;
+    return { lbl, mean };
+  }
+
+  /** Soft edges: a line pixel whose colour lies within BLEND_RGB of the mix of the two nearest shapes (within BLEND_R px)
+   *  prefers the closer shape's label (the TIE_DE rule, like inside a shape), so an anti-aliased edge doesn't print a
+   *  third, darker ink. An outline darker than both sides is no mix of them and keeps its own colour. -1 = no preference. */
+  function edgePrefer(shape, w, h, mean, lbl, img, W, H) {
+    const offs = [];
+    for (let dy = -BLEND_R; dy <= BLEND_R; dy++) for (let dx = -BLEND_R; dx <= BLEND_R; dx++) offs.push([dy, dx]);
+    offs.sort((p, q) => p[0] * p[0] + p[1] * p[1] - (q[0] * q[0] + q[1] * q[1]) || p[0] - q[0] || p[1] - q[1]);
+    const A = new Int32Array(w * h), B = new Int32Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (shape[i]) continue;
+      let a = 0, b = 0;
+      for (const [dy, dx] of offs) { // the nearest shape
+        const yy = y + dy, xx = x + dx;
+        if (yy >= 0 && yy < h && xx >= 0 && xx < w && shape[yy * w + xx]) { a = shape[yy * w + xx]; break; }
+      }
+      for (const [dy, dx] of offs) { // and the nearest other one
+        const yy = y + dy, xx = x + dx;
+        const s = yy >= 0 && yy < h && xx >= 0 && xx < w ? shape[yy * w + xx] : 0;
+        if (s && s !== a) { b = s; break; }
+      }
+      A[i] = a; B[i] = b;
+    }
+    const pref = new Int8Array(W * H).fill(-1), R2 = BLEND_RGB * BLEND_RGB;
+    for (let Y = 0; Y < H; Y++) {
+      const row = ((Y / SCALE) | 0) * w;
+      for (let X = 0; X < W; X++) {
+        const j = row + ((X / SCALE) | 0), a = A[j], b = B[j];
+        if (!a || !b) continue;
+        const i = Y * W + X, p0 = img[i * 3], p1 = img[i * 3 + 1], p2 = img[i * 3 + 2];
+        const a0 = mean[a * 3], a1 = mean[a * 3 + 1], a2 = mean[a * 3 + 2];
+        const v0 = mean[b * 3] - a0, v1 = mean[b * 3 + 1] - a1, v2 = mean[b * 3 + 2] - a2;
+        const vv = v0 * v0 + v1 * v1 + v2 * v2;
+        const t = ((p0 - a0) * v0 + (p1 - a1) * v1 + (p2 - a2) * v2) / Math.max(vv, 1e-9);
+        const tc = t < 0 ? 0 : t > 1 ? 1 : t;
+        const d0 = p0 - (a0 + tc * v0), d1 = p1 - (a1 + tc * v1), d2 = p2 - (a2 + tc * v2);
+        if (vv > 0 && d0 * d0 + d1 * d1 + d2 * d2 < R2) pref[i] = t < 0.5 ? lbl[a] : lbl[b];
+      }
+    }
+    return pref;
   }
 
   // ---------- 7×7 mode filter (Pillow's ModeFilter: most frequent value if it appears > 2 times, lowest on ties) ----------
@@ -371,7 +415,8 @@
     const img = upscale(rgb, w, h, W, H);
     await stage('描出色塊');
     const { notLine, shape, count } = trace(rgb, w, h);
-    const lbl = shapeColours(rgb, shape, count, P, pen);
+    const { lbl, mean } = shapeColours(rgb, shape, count, P, pen);
+    const edge = edgePrefer(shape, w, h, mean, lbl, img, W, H);
     await stage('每一點找最接近的印刷色');
     let idx = new Uint8Array(W * H), de = 0;
     const t = [0, 0, 0];
@@ -380,7 +425,8 @@
       for (let X = 0; X < W; X++) {
         const i = Y * W + X;
         labInt(img[i * 3], img[i * 3 + 1], img[i * 3 + 2], t, 0);
-        const b = nearest(t[0], t[1], t[2], P, pen, lbl[shape[srow + ((X / SCALE) | 0)]]);
+        const s = lbl[shape[srow + ((X / SCALE) | 0)]];
+        const b = nearest(t[0], t[1], t[2], P, pen, s >= 0 ? s : edge[i]);
         idx[i] = b; de += D[b];
       }
     }

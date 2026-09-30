@@ -30,14 +30,16 @@ Input: an image plus a four-ink `palette.json` (from 疊印色盤, the matrix pa
 - `--penalty N` (default 8): the ΔE cost per extra overprinted ink for off-palette pixels. It is about intent.
   Keep 8 for sparse art whose muted colours mean single inks (a muted pink stays pink rather than a 3-ink mauve).
   Use 6 when the art uses the overlap colours on purpose: image AIs draw overlaps darker and more saturated than they print.
-  Use 3 to keep shading steps (rose petals, folds) as overlaps; check zoomed edges for thin dark slivers it can add.
+  Use 5 to keep shading steps (rose petals, folds) as overlaps; the browser page's default (保留細節). 3 keeps even more,
+  but with light-ink palettes (粉彩) it can turn pale fills into dark overprints: check pale areas and greens.
   Use 0 when a whole element was drawn in an overlap colour and came out brighter than the cell.
 - `--print other.json`: classify against the palette the art was drawn in, but print with another palette's inks.
 - `--screen MASK:PCT` (e.g. `--screen 4:60`): print every pixel labelled with that ink mask as a PCT% halftone (50 lpi round dots,
   per-ink angles, no dot-gain curve: riso dots gain 10–20%, so ask for less than the tone you want). A screen only mixes between
   its two cells; it can never go past the solid overprint. Pick the ink for the strongest overprint you need, then screen the big areas it makes too heavy.
 - `python separate.py --check <palette.json> …` — after changing any knob: every exact palette colour must land on its own inks,
-  a grainy fill must come out as one colour, and a thin dark line must stay darker than its fill. It does not test real art,
+  a grainy fill must come out as one colour, a thin dark line must stay darker than its fill, and a soft edge between two
+  colours must print only those two (at penalty 3). It does not test real art,
   so also re-separate earlier images and compare zoomed crops.
 
 ## How it works (for tuning)
@@ -45,10 +47,14 @@ Input: an image plus a four-ink `palette.json` (from 疊印色盤, the matrix pa
 1. 3× Lanczos upscale, so 1–2 px lines keep a solid core.
 2. **Shapes:** the original is traced; a line is any pixel whose colour slope is > `EDGE_DE` 3 ΔE/px. Each area the lines close off
    gets one printable colour from its mean colour, and that colour wins every pixel within `TIE_DE` 12 of its own best. This keeps a flat fill from flickering between two colours.
-3. **Nearest colour** in Lab: a pixel lighter than a candidate pays only `L_WEIGHT` 0.3 of the lightness gap (a pale tint still reads as its ink);
+3. **Soft edges:** a line pixel whose colour is a mix of the two nearest shapes (within `BLEND_R` 3 px, `BLEND_RGB` 20)
+   prefers the closer shape's colour under the same `TIE_DE` rule, so an anti-aliased edge doesn't print a third, darker ink.
+   An outline darker than both sides is no mix of them and keeps its own colour.
+4. **Nearest colour** in Lab: a pixel lighter than a candidate pays only `L_WEIGHT` 0.3 of the lightness gap (a pale tint still reads as its ink);
    a darker one pays in full (a dark overlap never collapses to one ink). Off-palette pixels (> 4 ΔE from every colour) pay the ink penalty.
-4. 7×7 mode filter removes risograph grain.
-5. **Fine lines:** anything narrower than `FINE_PX` 11 px and `FINE_DE` 6 L darker than its surroundings, which the steps above lost,
+5. 7×7 mode filter removes risograph grain.
+6. **Fine lines:** anything narrower than `FINE_PX` 11 px and `FINE_DE` 6 L darker than its surroundings, which the steps above lost,
    is repainted in the nearest palette colour darker than its fill. Expect the palette's next-darker colour, which can be a big step.
 
-Knobs are constants at the top of `separate.py`. Plates come out at 3× the image size (a 1264 px wide image gives ~32 cm at 300 dpi).
+Knobs are constants at the top of `separate.py`. Plates come out at 3× the image size (a 1264 px wide image gives 3792 px: ~16 cm at 600 dpi, ~8 cm at the 1200 dpi
+our shop asks for sharp curves).
