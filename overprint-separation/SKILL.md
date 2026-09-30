@@ -37,10 +37,13 @@ Input: an image plus a four-ink `palette.json` (from 疊印色盤, the matrix pa
 - `--screen-colour RRGGBB=MASK:PCT` (e.g. `--screen-colour F8C4A2=2:50`): the art's own colour RRGGBB becomes one more printable
   colour, printed as MASK's inks in PCT% dots. Use it when a paler area shares an ink with a darker one and merges into it: Alice's
   face and her hair both separate to solid 720 U, so her skin goes to 720 U at 50%. Read RRGGBB from the art (median of a flat patch,
-  not an edge), take MASK from what that area separates to now, repeat the flag for more colours (up to 8). Every area of that
-  colour is screened (the same-coloured hearts on a card too), and a pixel that looks most like it keeps it even inside a traced
-  shape of the solid colour (soft face/hair boundaries leave both in one shape). On grey stock a screen reads greyer, not just
-  paler. Fine dark lines are never screened.
+  not an edge), take MASK from what that area separates to now, repeat the flag for more colours (up to 8). A pixel that looks
+  most like a screened colour keeps it even inside a traced shape of the solid colour (soft face/hair boundaries leave both
+  in one shape). On grey stock a screen reads greyer, not just paler. Fine dark lines are never screened.
+  Add `@x,y` (original px, repeatable) to screen only the areas clicked there: `F8C4A2=2:50@252,507@317,539` screens Alice's
+  face and arm but not the same-coloured hearts and clock face, which print solid. An area is the colour's connected patch at
+  that point, plus any of its patches inside that point's traced shape (see `-lines.png`). Without `@` every area of the colour
+  is screened; usually you want `@`, so pick a point inside each area and check the proof.
 - `--screen MASK:PCT` (e.g. `--screen 4:60`): print every pixel of that printable colour as PCT% dots instead (the whole colour, everywhere).
   A screen only mixes between its two cells; it can never go past the solid overprint.
 - Dots are round, 80 lpi at the printed size, at per-ink angles (15/75/45/0°), with no dot-gain curve (riso and letterpress dots

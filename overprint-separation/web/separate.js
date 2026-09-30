@@ -465,7 +465,7 @@
     idx = modeFilter(idx, W, H);
     await stage('補回細線');
     fineFeatures(rgb, w, h, img, W, H, P, P16, idx);
-    return { idx, W, H, de: de / (W * H), lines: notLine };
+    return { idx, W, H, de: de / (W * H), lines: notLine, shape, w, h };
   }
 
   // ---------- printing: halftone dots, then plates and the proof ----------
@@ -480,13 +480,35 @@
     return gu * gu + gv * gv >= (1 - pct) / Math.PI;
   }
 
-  /** The ink mask each plate pixel prints: its label's mask, as dots where that label is screened. dpi: the plates'
-   *  printed resolution (plate width × 2.54 / printed cm), which makes the dots LPI lines per inch. */
-  function printMasks(idx, W, palette, dpi) {
-    const { masks, pcts } = palette, pitch = dpi / LPI, out = new Uint8Array(idx.length);
+  /** Where screened colour k prints as dots (separate.py's screen_area), for a labels() result r: its 8-connected
+   *  areas at plate size that a clicked point [x, y] (original px) falls in, or that overlap that point's traced shape
+   *  (a soft face/hair boundary leaves the face inside the hair's shape). 1 = dots. */
+  function screenArea(r, k, seeds) {
+    const { idx, W, H, shape, w } = r, on = new Uint8Array(W * H);
+    for (let i = 0; i < on.length; i++) on[i] = idx[i] === k ? 1 : 0;
+    const { lab, n } = components(on, W, H, true, 0), hit = new Uint8Array(n);
+    const block = (x, y) => {
+      for (let dy = 0; dy < SCALE; dy++) for (let dx = 0; dx < SCALE; dx++) hit[lab[(y * SCALE + dy) * W + x * SCALE + dx]] = 1;
+    };
+    for (const [x, y] of seeds) {
+      block(x, y);
+      const s = shape[y * w + x];
+      if (s) for (let i = 0; i < shape.length; i++) if (shape[i] === s) block(i % w, (i - (i % w)) / w);
+    }
+    hit[0] = 0;
+    const area = new Uint8Array(W * H);
+    for (let i = 0; i < area.length; i++) area[i] = hit[lab[i]];
+    return area;
+  }
+
+  /** The ink mask each plate pixel prints: its label's mask, as dots where that label is screened (and, if areas[label]
+   *  is given, only inside it; elsewhere solid). dpi: the plates' printed resolution (plate width × 2.54 / printed cm),
+   *  which makes the dots LPI lines per inch. */
+  function printMasks(idx, W, palette, dpi, areas) {
+    const { masks, pcts } = palette, pitch = dpi / LPI, out = new Uint8Array(idx.length), A = areas || [];
     for (let i = 0; i < idx.length; i++) {
       const k = idx[i], m = masks[k];
-      if (!pcts[k]) { out[i] = m; continue; }
+      if (!pcts[k] || (A[k] && !A[k][i])) { out[i] = m; continue; }
       const X = i % W, Y = (i - X) / W;
       let v = 0;
       for (let b = 0; b < 4; b++) if ((m >> b) & 1 && dot(X, Y, b, pcts[k], pitch)) v |= 1 << b;
@@ -517,7 +539,7 @@
     return { rgba: out, coverage: on / idx.length };
   }
 
-  const api = { SCALE, INK_PENALTY, LPI, DPI, parsePalette, withScreens, labels, printMasks, proof, plate, _test: { upscale, modeFilter, components, trace, morph } };
+  const api = { SCALE, INK_PENALTY, LPI, DPI, parsePalette, withScreens, labels, screenArea, printMasks, proof, plate, _test: { upscale, modeFilter, components, trace, morph } };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.OverprintSeparate = api;
 })(globalThis);

@@ -14,8 +14,9 @@ spiral, a small shadow) are traced too and printed in a colour darker than the f
     python separate.py <image.png> <palette.json> --print other.json --screen 4:60
         # classify against palette.json (the colours the art was drawn in), print with other.json's inks,
         # and print every pixel labelled mask 4 (ink 3 alone) as a 60% halftone instead of solid
-    python separate.py <image.png> <palette.json> --screen-colour F8C4A2=2:50 --width 12
-        # the art's own #F8C4A2 (a face) becomes one more colour, printed as ink 2 in 50% dots; the dots are 80 lpi
+    python separate.py <image.png> <palette.json> --screen-colour F8C4A2=2:50@252,507 --width 12
+        # the art's own #F8C4A2 becomes one more colour, printed as ink 2 in 50% dots in the area at 252,507 (a face; without
+        # @x,y everywhere it matches); the dots are 80 lpi
         # when the picture prints 12 cm wide (without --width: at 600 dpi, the size the 分色 page quotes)
 """
 import sys
@@ -130,11 +131,29 @@ def screen(ys, xs, ink, pct, pitch):
     return gu * gu + gv * gv >= (1 - pct) / np.pi
 
 
-def print_masks(idx, masks, pcts, pitch):
-    """The ink mask each plate pixel prints: its label's mask, as halftone dots where that label has a pct (0 = solid)."""
+def screen_area(idx, k, shape, seeds):
+    """Where screened colour k prints as dots: its connected areas (8-connected, at plate size) that a clicked point
+    (x, y in original px) falls in, or that overlap the clicked point's traced shape (a soft face/hair boundary leaves the
+    face inside the hair's shape, so the click can land on either)."""
+    n, comp = cv2.connectedComponents((idx == k).astype(np.uint8), connectivity=8)
+    h, w = shape.shape
+    blocks = comp.reshape(h, SCALE, w, SCALE)
+    hit = np.zeros(n, bool)
+    for x, y in seeds:
+        hit[blocks[y, :, x, :]] = True
+        if shape[y, x]:
+            ys, xs = np.nonzero(shape == shape[y, x])
+            hit[blocks[ys, :, xs, :]] = True
+    hit[0] = False
+    return hit[comp]
+
+
+def print_masks(idx, masks, pcts, pitch, areas={}):
+    """The ink mask each plate pixel prints: its label's mask, as halftone dots where that label has a pct (0 = solid)
+    and, if areas has a mask for it, only inside that mask (elsewhere it prints solid)."""
     out = masks[idx].astype(np.uint8)
     for k in np.nonzero(pcts)[0]:
-        ys, xs = np.nonzero(idx == k)
+        ys, xs = np.nonzero((idx == k) & areas[k] if k in areas else idx == k)
         on = np.zeros(len(ys), np.uint8)
         for b in range(4):
             if masks[k] >> b & 1:
@@ -197,6 +216,15 @@ def self_check(palette_paths):
     assert (hair == 2).mean() > 0.99 and (skin == 16).mean() > 0.99, "a screened colour is not told apart from its solid ink"
     dots = print_masks(idx, masks, np.append(np.zeros(16), 0.5), DPI / LPI)[15 * SCALE:75 * SCALE, 50 * SCALE:75 * SCALE]
     assert abs((dots == 2).mean() - 0.5) < 0.03 and np.isin(dots, [0, 2]).all(), "a 50% screened colour does not print 50% dots"
+    # clicked areas: two patches of the screened colour, only the clicked one prints as dots, the other stays solid ink
+    img[10:80, 10:45] = pal[0]
+    img[10:40, 45:80], img[40:45, 45:80] = face, pal[0]
+    img = np.clip(img + np.random.default_rng(1).normal(0, 1.5, img.shape), 0, 255).astype(np.uint8)
+    idx = labels(Image.fromarray(img), np.vstack([pal, face]), masks)[0]
+    area = screen_area(idx, 16, trace(Image.fromarray(img))[1], [(60, 25)])
+    out = print_masks(idx, masks, np.append(np.zeros(16), 0.5), DPI / LPI, {16: area})
+    top, low = out[15 * SCALE:35 * SCALE, 50 * SCALE:75 * SCALE], out[50 * SCALE:75 * SCALE, 50 * SCALE:75 * SCALE]
+    assert abs((top == 2).mean() - 0.5) < 0.05 and (low == 2).mean() > 0.99, "a screen is not limited to the clicked area"
     print("self-check ok:", ", ".join(Path(n).stem for n in palette_paths))
 
 
@@ -326,21 +354,24 @@ def labels(orig, pal, masks=MASKS):
 
 
 def separate(src, palette_path, out_dir, print_path=None, screens={}, colours=(), width=None):
-    """screens: {mask: pct} prints every pixel of that colour as dots. colours: [(RRGGBB, mask, pct)] adds the art's own
-    colour RRGGBB as one more printable colour, printed as mask's inks in pct dots. width: printed width in cm (sets
-    the plates' dpi, so the dots come out LPI lines per inch); None = printed at DPI."""
+    """screens: {mask: pct} prints every pixel of that colour as dots. colours: [(RRGGBB, mask, pct, seeds)] adds the art's
+    own colour RRGGBB as one more printable colour, printed as mask's inks in pct dots: only in the areas clicked at seeds
+    [(x, y), ...] (see screen_area), or everywhere when seeds is empty. width: printed width in cm (sets the plates' dpi,
+    so the dots come out LPI lines per inch); None = printed at DPI."""
     orig = Image.open(src).convert("RGB")
-    rgb = [[int(c[i:i + 2], 16) for i in (0, 2, 4)] for c, _, _ in colours]
+    rgb = [[int(c[i:i + 2], 16) for i in (0, 2, 4)] for c, *_ in colours]
     pal = np.vstack([palette(palette_path), np.array(rgb, dtype=np.float64).reshape(-1, 3)])
-    masks = np.concatenate([MASKS, [m for _, m, _ in colours]]).astype(np.intp)
+    masks = np.concatenate([MASKS, [c[1] for c in colours]]).astype(np.intp)
     pcts = np.zeros(len(pal))
     for m, pct in screens.items():
         pcts[m] = pct
-    pcts[16:] = [pct for _, _, pct in colours]
+    pcts[16:] = [c[2] for c in colours]
     idx, de, lines = labels(orig, pal, masks)
     h, w = idx.shape
     dpi = DPI if width is None else w * 2.54 / width
-    printed = print_masks(idx, masks, pcts, dpi / LPI)
+    shape = trace(orig)[1] if any(c[3] for c in colours) else None
+    areas = {16 + k: screen_area(idx, 16 + k, shape, c[3]) for k, c in enumerate(colours) if c[3]}
+    printed = print_masks(idx, masks, pcts, dpi / LPI, areas)
     # the labels say which inks go where; --print swaps in other inks (the art stays drawn for palette_path)
     names, ink_pal = load_set(print_path or palette_path)
 
@@ -388,11 +419,12 @@ if __name__ == "__main__":
         elif flag == "--screen":
             m, pct = val.split(":")
             screens[int(m)] = float(pct) / 100
-        else:  # --screen-colour F8C4A2=2:50
+        else:  # --screen-colour F8C4A2=2:50, or F8C4A2=2:50@252,507@317,539 for only the areas clicked at those points
             hexc, spec = val.lstrip("#").split("=")
+            spec, *at = spec.split("@")
             m, pct = spec.split(":")
-            colours.append((hexc, int(m), float(pct) / 100))
-    for m, pct in [*screens.items(), *((m, p) for _, m, p in colours)]:
+            colours.append((hexc, int(m), float(pct) / 100, [tuple(map(int, a.split(","))) for a in at]))
+    for m, pct in [*screens.items(), *((c[1], c[2]) for c in colours)]:
         if not (1 <= m <= 15 and 0 < pct < 1):
             sys.exit(f"--screen / --screen-colour: the mask must be 1-15 and the percentage 1-99 (got {m}:{pct:.0%})")
     src, palette_path = sys.argv[1], sys.argv[2]
@@ -401,7 +433,8 @@ if __name__ == "__main__":
           ", ".join(f"{n} {c:.0%}" for n, c in plates))
     # share of the image per printable colour, by ink mask (0 = bare paper); < 0.1% counts as unused
     print(f"colours used {(share[1:16] >= 0.001).sum()}/15: " + " ".join(f"{m}:{share[m]:.1%}" for m in range(16)))
-    for k, (hexc, m, pct) in enumerate(colours):
-        print(f"screened colour #{hexc} (mask {m} at {pct:.0%}): {share[16 + k]:.1%} of the picture")
+    for k, (hexc, m, pct, at) in enumerate(colours):
+        where = f"in the areas at {' '.join(f'{x},{y}' for x, y in at)}" if at else "everywhere"
+        print(f"screened colour #{hexc} (mask {m} at {pct:.0%}, {where}): matches {share[16 + k]:.1%} of the picture")
     if screens or colours:
         print(f"the dots are {LPI} lpi when the picture prints {cm:.1f} cm wide (--width to change)")
