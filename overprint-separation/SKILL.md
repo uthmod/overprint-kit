@@ -30,6 +30,7 @@ Input: an image plus a four-ink `palette.json` (from 疊印色盤, the matrix pa
 - `--penalty N` (default 8): the ΔE cost per extra overprinted ink for off-palette pixels. It is about intent.
   Keep 8 for sparse art whose muted colours mean single inks (a muted pink stays pink rather than a 3-ink mauve).
   Use 6 when the art uses the overlap colours on purpose: image AIs draw overlaps darker and more saturated than they print.
+  Use 3 to keep shading steps (rose petals, folds) as overlaps; check zoomed edges for thin dark slivers it can add.
   Use 0 when a whole element was drawn in an overlap colour and came out brighter than the cell.
 - `--print other.json`: classify against the palette the art was drawn in, but print with another palette's inks.
 - `--screen MASK:PCT` (e.g. `--screen 4:60`): print every pixel labelled with that ink mask as a PCT% halftone (50 lpi round dots,
