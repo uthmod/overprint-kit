@@ -95,7 +95,8 @@ def classify(rgb, pal, prefer=None, masks=MASKS):
     """Label each pixel with its nearest printable colour (an index into pal, whose ink masks are masks); returns
     (labels, mean dE). prefer: optional per-pixel label (-1 = none) that wins wherever it scores within TIE_DE of the best,
     except over a screened colour (label 16+): those are chosen to tell apart areas sharing an ink (a face beside the hair),
-    which a soft boundary often leaves in one traced shape, so a pixel that looks most like one keeps it."""
+    which a soft boundary often leaves in one traced shape, so a pixel that looks most like one keeps it. A pixel more than
+    EXACT_DE darker than a screened colour never takes it."""
     lab, pal_lab = to_lab(rgb).reshape(-1, 3), to_lab(pal)
     cost = INK_PENALTY * N_INKS[masks]
     idx = np.empty(len(lab), np.uint8)
@@ -108,6 +109,9 @@ def classify(rgb, pal, prefer=None, masks=MASKS):
         d = np.sqrt(dl ** 2 + diff[..., 1] ** 2 + diff[..., 2] ** 2)
         # the ink penalty only breaks ties between off-palette guesses; a near-exact printable colour always wins
         sc = d + cost * (d > EXACT_DE)
+        # a screen prints its colour paler than the solid ink, so a pixel darker than a screened colour stays solid:
+        # screen a teacup's body and its darker inside still prints solid, darker than the body
+        sc[:, 16:][diff[:, 16:, 0] < -EXACT_DE] = np.inf
         best = sc.argmin(1)
         if prefer is not None:
             p, r = prefer.ravel()[i:i + len(d)].astype(np.intp), np.arange(len(d))
@@ -225,6 +229,14 @@ def self_check(palette_paths):
     out = print_masks(idx, masks, np.append(np.zeros(16), 0.5), DPI / LPI, {16: area})
     top, low = out[15 * SCALE:35 * SCALE, 50 * SCALE:75 * SCALE], out[50 * SCALE:75 * SCALE, 50 * SCALE:75 * SCALE]
     assert abs((top == 2).mean() - 0.5) < 0.05 and (low == 2).mean() > 0.99, "a screen is not limited to the clicked area"
+    # a teacup: its body screened, its darker inside (nearer the body's colour than any ink) stays solid
+    cup, inside = pal[4] * 0.92, pal[4] * 0.8
+    img = np.full((90, 90, 3), pal[0])
+    img[10:80, 10:80], img[10:40, 20:70] = cup, inside
+    img = np.clip(img + np.random.default_rng(0).normal(0, 1.5, img.shape), 0, 255).astype(np.uint8)
+    idx = labels(Image.fromarray(img), np.vstack([pal, cup]), np.append(MASKS, 4))[0]
+    body, dark = idx[50 * SCALE:75 * SCALE, 15 * SCALE:75 * SCALE], idx[15 * SCALE:35 * SCALE, 25 * SCALE:65 * SCALE]
+    assert (body == 16).mean() > 0.99 and (dark == 16).mean() < 0.01, "a colour darker than a screened one is screened too"
     print("self-check ok:", ", ".join(Path(n).stem for n in palette_paths))
 
 
@@ -275,10 +287,11 @@ def edge_prefer(shape, mean, lbl, img, prefer):
     prefer[ys[mix], xs[mix]] = np.where(t[mix] < 0.5, lbl[a[mix]], lbl[b[mix]])
 
 
-def fine_features(orig, img, pal, idx, masks=MASKS):
+def fine_features(orig, img, pal, idx, shape, mean, masks=MASKS):
     """Paint fine dark features over idx (in place). Each connected piece takes the printable colour nearest to it
     (plain dE, so a pale grey line stays as light as the palette allows) among those darker than the fill it sits on.
-    Only the palette's own 16 colours: a line printed as halftone dots would break up."""
+    Only the palette's own 16 colours: a line printed as halftone dots would break up. A piece the colour of a traced
+    shape it touches (shape, mean: from shape_colours) is that shape's tip or a strand leaving it: it keeps its own colour."""
     a = np.asarray(orig, dtype=np.float64)
     pal_lab = to_lab(pal)
     # the surroundings: closing wipes out anything dark and narrower than FINE_PX
@@ -326,7 +339,15 @@ def fine_features(orig, img, pal, idx, masks=MASKS):
     pick = sc.argmin(1)
     own = np.zeros(n, np.intp)
     own[s] = near[ys, xs]
-    pick = np.where(darker[np.arange(n), own], own, pick)  # its own nearest colour, when that already shows
+    # its own nearest colour when that already shows, or when the piece is a tip: no longer than FINE_PX and the colour of a
+    # shape in its ring. A teacup's dark inside narrows to a point at the rim, and that point is no line to print darker
+    # than the inside itself; a longer strand leaving a shape still is (hair drawn as dark strands from a dark mass)
+    sr = shape[ry // SCALE, rx // SCALE]
+    tip = np.bincount(rs, (sr > 0) & (np.linalg.norm(col_lab[rs] - to_lab(mean)[sr], axis=1) < FINE_DE), minlength=n) > 0
+    lo, hi = np.full((n, 2), 1 << 30), np.full((n, 2), -1)
+    np.minimum.at(lo, s, np.stack([ys, xs], 1)); np.maximum.at(hi, s, np.stack([ys, xs], 1))
+    tip &= (hi - lo).max(1) < FINE_PX * SCALE
+    pick = np.where(darker[np.arange(n), own] | tip, own, pick)
     area = np.bincount(s, minlength=n)
     # leave pieces that already show: the shapes kept a pocket watch ring or an eye dot, only lost lines need help
     shown = np.bincount(s, darker[s, idx[ys, xs]], minlength=n) >= 0.5 * area
@@ -349,7 +370,7 @@ def labels(orig, pal, masks=MASKS):
     idx, de = classify(img, pal, prefer, masks)
     # ponytail: mode filter kills risograph grain speckle; raise the size if plates look noisy
     idx = np.array(Image.fromarray(idx, "L").filter(ImageFilter.ModeFilter(7)))
-    fine_features(orig, img, pal, idx, masks)
+    fine_features(orig, img, pal, idx, shape, mean, masks)
     return idx, de, lines
 
 

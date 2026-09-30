@@ -69,7 +69,8 @@
   const SC = new Float64Array(64), D = new Float64Array(64);
   /** Q: { lab, cost } for the candidate colours (cost = penalty × extra inks). Best label for one Lab colour; D[best] is
    *  left holding its dE. prefer (-1 = none) wins within TIE_DE, but never over a screened colour (label 16+) unless
-   *  it is one too: those tell apart areas sharing an ink (a face beside the hair) that a soft boundary leaves in one shape. */
+   *  it is one too: those tell apart areas sharing an ink (a face beside the hair) that a soft boundary leaves in one shape.
+   *  A pixel more than EXACT_DE darker than a screened colour never takes it (a screen prints paler than the solid ink). */
   function nearest(l, a, b, Q, prefer) {
     const P = Q.lab, C = Q.cost, K = C.length;
     let best = 0, bs = Infinity;
@@ -78,7 +79,7 @@
       // lightness is asymmetric: a pixel LIGHTER than a candidate costs only L_WEIGHT (a pale tint still reads as its ink)
       const dl = dl0 > 0 ? L_WEIGHT * dl0 : dl0, da = a - P[3 * k + 1], db = b - P[3 * k + 2];
       const d = Math.sqrt(dl * dl + da * da + db * db);
-      const sc = d + (d > EXACT_DE ? C[k] : 0);
+      const sc = k >= 16 && dl0 < -EXACT_DE ? Infinity : d + (d > EXACT_DE ? C[k] : 0);
       D[k] = d; SC[k] = sc;
       if (sc < bs) { bs = sc; best = k; }
     }
@@ -339,8 +340,10 @@
     return diff;
   }
 
-  /** Q: all candidate colours; Q16: the palette's own 16, the only ones a line is painted in (dots would break it up). */
-  function fineFeatures(rgb, w, h, img, W, H, Q, Q16, idx) {
+  /** Q: all candidate colours; Q16: the palette's own 16, the only ones a line is painted in (dots would break it up).
+   *  shape, mean: the traced shapes (see shapeColours); a piece no longer than FINE_PX and the colour of a shape in its
+   *  ring is that shape's tip (a teacup's dark inside narrowing at the rim), not a line: it keeps its own colour. */
+  function fineFeatures(rgb, w, h, img, W, H, Q, Q16, idx, shape, mean) {
     const diff = darkness(rgb, w, h, W, H), N = W * H, pal = Q.lab, K = Q.cost.length, t = [0, 0, 0];
     const near = new Uint8Array(N).fill(255);
     let any = false;
@@ -393,11 +396,15 @@
     }
     // each piece's colour from its middle (not its anti-aliased edges)
     const peak = new Float64Array(n), area = new Float64Array(n), own = new Int32Array(n);
+    const lo = new Int32Array(2 * n).fill(1 << 30), hi = new Int32Array(2 * n).fill(-1); // each piece's extent (y, x)
     for (let i = 0; i < N; i++) {
       const s = seg[i];
       if (!s) continue;
       if (diff[i] > peak[s]) peak[s] = diff[i];
       area[s]++; own[s] = near[i];
+      const Y = (i / W) | 0, X = i - Y * W;
+      lo[2 * s] = Math.min(lo[2 * s], Y); hi[2 * s] = Math.max(hi[2 * s], Y);
+      lo[2 * s + 1] = Math.min(lo[2 * s + 1], X); hi[2 * s + 1] = Math.max(hi[2 * s + 1], X);
     }
     const col = new Float64Array(n * 3), colN = new Float64Array(n);
     for (let i = 0; i < N; i++) {
@@ -405,10 +412,26 @@
       if (!s || !(diff[i] >= 0.6 * peak[s])) continue;
       col[s * 3] += img[i * 3]; col[s * 3 + 1] += img[i * 3 + 1]; col[s * 3 + 2] += img[i * 3 + 2]; colN[s]++;
     }
-    const pick = new Int32Array(n), finite = new Uint8Array(n), colL = new Float64Array(n), darker = new Uint8Array(n * K);
+    const colLab = new Float64Array(n * 3);
     for (let s = 0; s < n; s++) {
       const q = Math.max(colN[s], 1);
-      labF(col[s * 3] / q, col[s * 3 + 1] / q, col[s * 3 + 2] / q, t, 0);
+      labF(col[s * 3] / q, col[s * 3 + 1] / q, col[s * 3 + 2] / q, colLab, s * 3);
+    }
+    // tips: short pieces the colour of a traced shape in their ring
+    const meanLab = new Float64Array(mean.length), tip = new Uint8Array(n);
+    for (let k = 0; k < mean.length; k += 3) labF(mean[k], mean[k + 1], mean[k + 2], meanLab, k);
+    for (let i = 0; i < N; i++) {
+      const s = grown[i];
+      if (!(s > 0 && diff[i] <= 2) || tip[s]) continue;
+      const Y = (i / W) | 0, sr = shape[((Y / SCALE) | 0) * w + (((i - Y * W) / SCALE) | 0)];
+      if (!sr) continue;
+      const d0 = colLab[s * 3] - meanLab[sr * 3], d1 = colLab[s * 3 + 1] - meanLab[sr * 3 + 1], d2 = colLab[s * 3 + 2] - meanLab[sr * 3 + 2];
+      if (Math.sqrt(d0 * d0 + d1 * d1 + d2 * d2) < FINE_DE) tip[s] = 1;
+    }
+    for (let s = 1; s < n; s++) if (Math.max(hi[2 * s] - lo[2 * s], hi[2 * s + 1] - lo[2 * s + 1]) >= FINE_PX * SCALE) tip[s] = 0;
+    const pick = new Int32Array(n), finite = new Uint8Array(n), colL = new Float64Array(n), darker = new Uint8Array(n * K);
+    for (let s = 0; s < n; s++) {
+      t[0] = colLab[s * 3]; t[1] = colLab[s * 3 + 1]; t[2] = colLab[s * 3 + 2];
       colL[s] = t[0];
       let best = 0, bv = Infinity;
       for (let k = 0; k < K; k++) {
@@ -419,7 +442,7 @@
         if (sc < bv) { bv = sc; best = k; }
       }
       finite[s] = bv < Infinity ? 1 : 0;
-      pick[s] = darker[s * K + own[s]] ? own[s] : best; // its own nearest colour, when that already shows
+      pick[s] = darker[s * K + own[s]] || tip[s] ? own[s] : best; // its own nearest colour, when that already shows or a tip
     }
     // leave pieces that already show; only lost lines need help
     const shown = new Float64Array(n);
@@ -464,7 +487,7 @@
     await stage('去掉雜點');
     idx = modeFilter(idx, W, H);
     await stage('補回細線');
-    fineFeatures(rgb, w, h, img, W, H, P, P16, idx);
+    fineFeatures(rgb, w, h, img, W, H, P, P16, idx, shape, mean);
     return { idx, W, H, de: de / (W * H), lines: notLine, shape, w, h };
   }
 
