@@ -1,6 +1,7 @@
 // separate.js — 分色 in the browser: a JavaScript port of ../separate.py (same constants, same steps, same order),
-// so a plate made here matches one made in Claude Code. One image + a four-ink palette.json → an ink mask per
-// pixel at 3× the image size; plate b is (mask >> b) & 1 (bit 0 = the first ink printed).
+// so a plate made here matches one made in Claude Code. One image + a four-ink palette.json → a printable colour per
+// pixel at 3× the image size (labels 0–15 are the palette's colours, each its own ink mask; screened colours follow);
+// printMasks turns them into ink masks with halftone dots, and plate b is (mask >> b) & 1 (bit 0 = the first ink printed).
 // Plain script: window.OverprintSeparate in a page, module.exports in Node (the parity check against separate.py).
 (function (root) {
   'use strict';
@@ -13,6 +14,10 @@
   const PREC = 1 << 22; // Pillow's fixed-point resample precision
   const bits = (m) => (m & 1) + ((m >> 1) & 1) + ((m >> 2) & 1) + ((m >> 3) & 1);
   const N_INKS = Array.from({ length: 16 }, (_, m) => Math.max(bits(m) - 1, 0)); // paper and solo inks are free
+  // halftone screens: a screened colour is the art's own colour, printed as an ink mask in dots (see separate.py)
+  const LPI = 80, DPI = 600;
+  const SCREEN_COS = [0.9659258262890683, 0.25881904510252074, 0.7071067811865476, 1.0];
+  const SCREEN_SIN = [0.25881904510252074, 0.9659258262890683, 0.7071067811865476, 0.0];
 
   // ---------- colour: sRGB → Lab (D65), the matrix and white point of separate.py ----------
   const lin = (v) => { const c = v / 255; return c > 0.04045 ? ((c + 0.055) / 1.055) ** 2.4 : c / 12.92; };
@@ -27,7 +32,8 @@
   const labInt = (r, g, b, out, o) => labOf(LIN[r], LIN[g], LIN[b], out, o); // 0–255 integers
   const labF = (r, g, b, out, o) => labOf(lin(r), lin(g), lin(b), out, o); // any 0–255 value
 
-  /** A palette.json (from 疊印色盤, the matrix page, or the kit email) → names + the 16 printable colours by ink mask. */
+  /** A palette.json (from 疊印色盤, the matrix page, or the kit email) → names + the 16 printable colours by ink mask.
+   *  masks/pcts: each colour's ink mask and screen (0 = solid); withScreens adds screened colours after the 16. */
   function parsePalette(p) {
     if (!p || !Array.isArray(p.inks) || !Array.isArray(p.cells)) throw new Error('這不是 palette.json：找不到 inks 和 cells');
     if (p.inks.length !== 4 || p.cells.length !== 16) throw new Error(`分色需要 4 支墨的色盤（這個有 ${p.inks.length} 支）`);
@@ -39,24 +45,44 @@
       for (let k = 0; k < 3; k++) rgb[m * 3 + k] = parseInt(hex.slice(2 * k, 2 * k + 2), 16);
       labF(rgb[m * 3], rgb[m * 3 + 1], rgb[m * 3 + 2], lab, m * 3);
     });
-    return { name: String(p.name || ''), inks: p.inks.map((i) => String(field(i, 'name'))), rgb, lab };
+    const masks = Int32Array.from({ length: 16 }, (_, m) => m), pcts = new Float64Array(16);
+    return { name: String(p.name || ''), inks: p.inks.map((i) => String(field(i, 'name'))), rgb, lab, masks, pcts };
+  }
+
+  /** The palette plus screened colours: [{ rgb: [r, g, b], mask, pct }], the art's own colour printed as mask's inks in
+   *  pct (0–1) dots. They become labels 16, 17, … (the Python --screen-colour). */
+  function withScreens(p, list) {
+    const K = 16 + list.length, rgb = new Float64Array(K * 3), lab = new Float64Array(K * 3);
+    rgb.set(p.rgb.subarray(0, 48)); lab.set(p.lab.subarray(0, 48));
+    const masks = new Int32Array(K), pcts = new Float64Array(K);
+    masks.set(p.masks.subarray(0, 16)); pcts.set(p.pcts.subarray(0, 16));
+    list.forEach((c, k) => {
+      const j = 16 + k;
+      for (let q = 0; q < 3; q++) rgb[j * 3 + q] = c.rgb[q];
+      labF(c.rgb[0], c.rgb[1], c.rgb[2], lab, j * 3);
+      masks[j] = c.mask; pcts[j] = c.pct;
+    });
+    return { ...p, rgb, lab, masks, pcts };
   }
 
   // ---------- nearest printable colour ----------
-  const SC = new Float64Array(16), D = new Float64Array(16);
-  /** Best ink mask for one Lab colour; D[best] is left holding its dE. prefer (-1 = none) wins within TIE_DE. */
-  function nearest(l, a, b, P, pen, prefer) {
+  const SC = new Float64Array(64), D = new Float64Array(64);
+  /** Q: { lab, cost } for the candidate colours (cost = penalty × extra inks). Best label for one Lab colour; D[best] is
+   *  left holding its dE. prefer (-1 = none) wins within TIE_DE, but never over a screened colour (label 16+) unless
+   *  it is one too: those tell apart areas sharing an ink (a face beside the hair) that a soft boundary leaves in one shape. */
+  function nearest(l, a, b, Q, prefer) {
+    const P = Q.lab, C = Q.cost, K = C.length;
     let best = 0, bs = Infinity;
-    for (let k = 0; k < 16; k++) {
+    for (let k = 0; k < K; k++) {
       const dl0 = l - P[3 * k];
       // lightness is asymmetric: a pixel LIGHTER than a candidate costs only L_WEIGHT (a pale tint still reads as its ink)
       const dl = dl0 > 0 ? L_WEIGHT * dl0 : dl0, da = a - P[3 * k + 1], db = b - P[3 * k + 2];
       const d = Math.sqrt(dl * dl + da * da + db * db);
-      const sc = d + (d > EXACT_DE ? pen * N_INKS[k] : 0);
+      const sc = d + (d > EXACT_DE ? C[k] : 0);
       D[k] = d; SC[k] = sc;
       if (sc < bs) { bs = sc; best = k; }
     }
-    if (prefer >= 0 && SC[prefer] - bs < TIE_DE) best = prefer;
+    if (prefer >= 0 && SC[prefer] - bs < TIE_DE && (best < 16 || prefer >= 16)) best = prefer;
     return best;
   }
 
@@ -175,7 +201,7 @@
   }
 
   /** Each shape's printable colour from its mean colour; lines and tiny shapes get -1 (no preference). Also the means. */
-  function shapeColours(rgb, shape, count, P, pen) {
+  function shapeColours(rgb, shape, count, P) {
     const sum = new Float64Array(count * 3), num = new Float64Array(count);
     for (let i = 0; i < shape.length; i++) {
       const s = shape[i]; num[s]++;
@@ -186,7 +212,7 @@
       const q = Math.max(num[s], 1);
       mean[s * 3] = sum[s * 3] / q; mean[s * 3 + 1] = sum[s * 3 + 1] / q; mean[s * 3 + 2] = sum[s * 3 + 2] / q;
       labF(mean[s * 3], mean[s * 3 + 1], mean[s * 3 + 2], t, 0);
-      lbl[s] = nearest(t[0], t[1], t[2], P, pen, -1);
+      lbl[s] = nearest(t[0], t[1], t[2], P, -1);
     }
     lbl[0] = -1;
     return { lbl, mean };
@@ -250,7 +276,7 @@
           }
         }
         let mp = 0, mc = hist[0];
-        for (let k = 1; k < 16; k++) if (hist[k] > mc) { mc = hist[k]; mp = k; }
+        for (let k = 1; k < 64; k++) if (hist[k] > mc) { mc = hist[k]; mp = k; }
         out[y * W + x] = mc > 2 ? mp : src[y * W + x];
       }
     }
@@ -313,15 +339,16 @@
     return diff;
   }
 
-  function fineFeatures(rgb, w, h, img, W, H, P, pen, idx) {
-    const diff = darkness(rgb, w, h, W, H), N = W * H, pal = P, t = [0, 0, 0];
+  /** Q: all candidate colours; Q16: the palette's own 16, the only ones a line is painted in (dots would break it up). */
+  function fineFeatures(rgb, w, h, img, W, H, Q, Q16, idx) {
+    const diff = darkness(rgb, w, h, W, H), N = W * H, pal = Q.lab, K = Q.cost.length, t = [0, 0, 0];
     const near = new Uint8Array(N).fill(255);
     let any = false;
     for (let i = 0; i < N; i++) {
       if (!(diff[i] > FINE_DE)) continue;
       any = true;
       labInt(img[i * 3], img[i * 3 + 1], img[i * 3 + 2], t, 0);
-      near[i] = nearest(t[0], t[1], t[2], pal, pen, -1);
+      near[i] = nearest(t[0], t[1], t[2], Q16, -1);
     }
     if (!any) return;
     // pieces: connected feature pixels of one nearest colour, numbered colour by colour like separate.py
@@ -346,14 +373,14 @@
     }
     const palL = (k) => pal[3 * k];
     // the fill each piece sits on: the darkest colour making up >= 25% of its ring
-    const cnt = new Float64Array(n * 16);
-    for (let i = 0; i < N; i++) if (grown[i] > 0 && diff[i] <= 2) cnt[grown[i] * 16 + idx[i]]++;
+    const cnt = new Float64Array(n * K);
+    for (let i = 0; i < N; i++) if (grown[i] > 0 && diff[i] <= 2) cnt[grown[i] * K + idx[i]]++;
     const host = new Int32Array(n);
     for (let s = 0; s < n; s++) {
       let tot = 0;
-      for (let k = 0; k < 16; k++) tot += cnt[s * 16 + k];
+      for (let k = 0; k < K; k++) tot += cnt[s * K + k];
       let best = 0, bv = Infinity;
-      for (let k = 0; k < 16; k++) { const v = cnt[s * 16 + k] >= 0.25 * tot ? palL(k) : Infinity; if (v < bv) { bv = v; best = k; } }
+      for (let k = 0; k < K; k++) { const v = cnt[s * K + k] >= 0.25 * tot ? palL(k) : Infinity; if (v < bv) { bv = v; best = k; } }
       host[s] = best;
     }
     // and how light that fill really is in the art
@@ -378,24 +405,25 @@
       if (!s || !(diff[i] >= 0.6 * peak[s])) continue;
       col[s * 3] += img[i * 3]; col[s * 3 + 1] += img[i * 3 + 1]; col[s * 3 + 2] += img[i * 3 + 2]; colN[s]++;
     }
-    const pick = new Int32Array(n), finite = new Uint8Array(n), colL = new Float64Array(n), darker = new Uint8Array(n * 16);
+    const pick = new Int32Array(n), finite = new Uint8Array(n), colL = new Float64Array(n), darker = new Uint8Array(n * K);
     for (let s = 0; s < n; s++) {
       const q = Math.max(colN[s], 1);
       labF(col[s * 3] / q, col[s * 3 + 1] / q, col[s * 3 + 2] / q, t, 0);
       colL[s] = t[0];
       let best = 0, bv = Infinity;
-      for (let k = 0; k < 16; k++) {
-        darker[s * 16 + k] = palL(k) < palL(host[s]) - 2 ? 1 : 0; // colours that still show against the fill
+      for (let k = 0; k < K; k++) {
+        darker[s * K + k] = palL(k) < palL(host[s]) - 2 ? 1 : 0; // colours that still show against the fill
+        if (k >= 16) continue; // lines only in the palette's own colours
         const d = Math.hypot(t[0] - pal[3 * k], t[1] - pal[3 * k + 1], t[2] - pal[3 * k + 2]);
-        const sc = darker[s * 16 + k] ? d + (d > EXACT_DE ? pen * N_INKS[k] : 0) : Infinity;
+        const sc = darker[s * K + k] ? d + (d > EXACT_DE ? Q.cost[k] : 0) : Infinity;
         if (sc < bv) { bv = sc; best = k; }
       }
       finite[s] = bv < Infinity ? 1 : 0;
-      pick[s] = darker[s * 16 + own[s]] ? own[s] : best; // its own nearest colour, when that already shows
+      pick[s] = darker[s * K + own[s]] ? own[s] : best; // its own nearest colour, when that already shows
     }
     // leave pieces that already show; only lost lines need help
     const shown = new Float64Array(n);
-    for (let i = 0; i < N; i++) { const s = seg[i]; if (s && darker[s * 16 + idx[i]]) shown[s]++; }
+    for (let i = 0; i < N; i++) { const s = seg[i]; if (s && darker[s * K + idx[i]]) shown[s]++; }
     const keep = new Uint8Array(n);
     for (let s = 1; s < n; s++) {
       const hostL = hostSum[s] / Math.max(hostNum[s], 1);
@@ -409,14 +437,16 @@
   /** rgb: Uint8Array w*h*3. Returns the ink mask per pixel at 3× (W×H), the mean dE to the nearest printable colour,
    *  and the traced line layer. onStage(text) is called (and awaited) before each step, for a progress line. */
   async function labels(rgb, w, h, palette, opts) {
-    const o = opts || {}, pen = o.penalty == null ? INK_PENALTY : o.penalty, P = palette.lab;
+    const o = opts || {}, pen = o.penalty == null ? INK_PENALTY : o.penalty;
+    const cost = Float64Array.from(palette.masks, (m) => pen * N_INKS[m]);
+    const P = { lab: palette.lab, cost }, P16 = { lab: palette.lab, cost: cost.subarray(0, 16) };
     const stage = async (s) => { if (o.onStage) await o.onStage(s); await pause(); };
     const W = w * SCALE, H = h * SCALE;
     await stage('放大 3 倍');
     const img = upscale(rgb, w, h, W, H);
     await stage('描出色塊');
     const { notLine, shape, count } = trace(rgb, w, h);
-    const { lbl, mean } = shapeColours(rgb, shape, count, P, pen);
+    const { lbl, mean } = shapeColours(rgb, shape, count, P);
     const edge = edgePrefer(shape, w, h, mean, lbl, img, W, H);
     await stage('每一點找最接近的印刷色');
     let idx = new Uint8Array(W * H), de = 0;
@@ -427,18 +457,45 @@
         const i = Y * W + X;
         labInt(img[i * 3], img[i * 3 + 1], img[i * 3 + 2], t, 0);
         const s = lbl[shape[srow + ((X / SCALE) | 0)]];
-        const b = nearest(t[0], t[1], t[2], P, pen, s >= 0 ? s : edge[i]);
+        const b = nearest(t[0], t[1], t[2], P, s >= 0 ? s : edge[i]);
         idx[i] = b; de += D[b];
       }
     }
     await stage('去掉雜點');
     idx = modeFilter(idx, W, H);
     await stage('補回細線');
-    fineFeatures(rgb, w, h, img, W, H, P, pen, idx);
+    fineFeatures(rgb, w, h, img, W, H, P, P16, idx);
     return { idx, W, H, de: de / (W * H), lines: notLine };
   }
 
-  /** The proof: each pixel in the colour its inks print (from the plates). RGBA for a canvas. */
+  // ---------- printing: halftone dots, then plates and the proof ----------
+  /** Whether plate pixel (X, Y) falls inside a round halftone dot covering pct, pitch plate px apart at the ink's own
+   *  angle. The same plain arithmetic as separate.py's screen(), so the dots match bit for bit. */
+  function dot(X, Y, ink, pct, pitch) {
+    const c = SCREEN_COS[ink], s = SCREEN_SIN[ink], x = X + 0.5, y = Y + 0.5;
+    const u = (x * c + y * s) / pitch, v = (y * c - x * s) / pitch;
+    const fu = u - Math.floor(u) - 0.5, fv = v - Math.floor(v) - 0.5;
+    if (pct <= 0.5) return fu * fu + fv * fv < pct / Math.PI; // an ink dot in the middle of each cell
+    const gu = 0.5 - Math.abs(fu), gv = 0.5 - Math.abs(fv); // past 50%: round paper holes at the cell corners
+    return gu * gu + gv * gv >= (1 - pct) / Math.PI;
+  }
+
+  /** The ink mask each plate pixel prints: its label's mask, as dots where that label is screened. dpi: the plates'
+   *  printed resolution (plate width × 2.54 / printed cm), which makes the dots LPI lines per inch. */
+  function printMasks(idx, W, palette, dpi) {
+    const { masks, pcts } = palette, pitch = dpi / LPI, out = new Uint8Array(idx.length);
+    for (let i = 0; i < idx.length; i++) {
+      const k = idx[i], m = masks[k];
+      if (!pcts[k]) { out[i] = m; continue; }
+      const X = i % W, Y = (i - X) / W;
+      let v = 0;
+      for (let b = 0; b < 4; b++) if ((m >> b) & 1 && dot(X, Y, b, pcts[k], pitch)) v |= 1 << b;
+      out[i] = v;
+    }
+    return out;
+  }
+
+  /** The proof: each pixel in the colour its inks print (from printMasks, so the dots show). RGBA for a canvas. */
   function proof(idx, palette) {
     const out = new Uint8ClampedArray(idx.length * 4);
     for (let i = 0; i < idx.length; i++) {
@@ -448,7 +505,7 @@
     return out;
   }
 
-  /** Plate b as RGBA: black where ink b prints, white elsewhere; and its coverage (0–1). */
+  /** Plate b as RGBA from printMasks: black where ink b prints, white elsewhere; and its coverage (0–1). */
   function plate(idx, b) {
     const out = new Uint8ClampedArray(idx.length * 4);
     let on = 0;
@@ -460,7 +517,7 @@
     return { rgba: out, coverage: on / idx.length };
   }
 
-  const api = { SCALE, INK_PENALTY, parsePalette, labels, proof, plate, _test: { upscale, modeFilter, components, trace, morph } };
+  const api = { SCALE, INK_PENALTY, LPI, DPI, parsePalette, withScreens, labels, printMasks, proof, plate, _test: { upscale, modeFilter, components, trace, morph } };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.OverprintSeparate = api;
 })(globalThis);

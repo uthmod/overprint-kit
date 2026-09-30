@@ -34,12 +34,23 @@ Input: an image plus a four-ink `palette.json` (from 疊印色盤, the matrix pa
   but with light-ink palettes (粉彩) it can turn pale fills into dark overprints: check pale areas and greens.
   Use 0 when a whole element was drawn in an overlap colour and came out brighter than the cell.
 - `--print other.json`: classify against the palette the art was drawn in, but print with another palette's inks.
-- `--screen MASK:PCT` (e.g. `--screen 4:60`): print every pixel labelled with that ink mask as a PCT% halftone (50 lpi round dots,
-  per-ink angles, no dot-gain curve: riso dots gain 10–20%, so ask for less than the tone you want). A screen only mixes between
-  its two cells; it can never go past the solid overprint. Pick the ink for the strongest overprint you need, then screen the big areas it makes too heavy.
+- `--screen-colour RRGGBB=MASK:PCT` (e.g. `--screen-colour F8C4A2=2:50`): the art's own colour RRGGBB becomes one more printable
+  colour, printed as MASK's inks in PCT% dots. Use it when a paler area shares an ink with a darker one and merges into it: Alice's
+  face and her hair both separate to solid 720 U, so her skin goes to 720 U at 50%. Read RRGGBB from the art (median of a flat patch,
+  not an edge), take MASK from what that area separates to now, repeat the flag for more colours (up to 8). Every area of that
+  colour is screened (the same-coloured hearts on a card too), and a pixel that looks most like it keeps it even inside a traced
+  shape of the solid colour (soft face/hair boundaries leave both in one shape). On grey stock a screen reads greyer, not just
+  paler. Fine dark lines are never screened.
+- `--screen MASK:PCT` (e.g. `--screen 4:60`): print every pixel of that printable colour as PCT% dots instead (the whole colour, everywhere).
+  A screen only mixes between its two cells; it can never go past the solid overprint.
+- Dots are round, 80 lpi at the printed size, at per-ink angles (15/75/45/0°), with no dot-gain curve (riso and letterpress dots
+  gain 10–20%, so ask for less than the tone you want). `--width CM` is the printed width of the whole picture; without it the
+  plates are taken to print at 600 dpi (the size the output line reports). Plates and proof are saved tagged with that dpi, so they
+  open at the right size in Illustrator. Printed at another size, the dots scale with it: tell the user the width.
 - `python separate.py --check <palette.json> …` — after changing any knob: every exact palette colour must land on its own inks,
-  a grainy fill must come out as one colour, a thin dark line must stay darker than its fill, and a soft edge between two
-  colours must print only those two (at penalty 3). It does not test real art,
+  a grainy fill must come out as one colour, a thin dark line must stay darker than its fill, a soft edge between two
+  colours must print only those two (at penalty 3), screens must cover their percentage, and a screened colour must be told
+  apart from its solid ink beside it. It does not test real art,
   so also re-separate earlier images and compare zoomed crops.
 
 ## How it works (for tuning)
@@ -52,9 +63,11 @@ Input: an image plus a four-ink `palette.json` (from 疊印色盤, the matrix pa
    An outline darker than both sides is no mix of them and keeps its own colour.
 4. **Nearest colour** in Lab: a pixel lighter than a candidate pays only `L_WEIGHT` 0.3 of the lightness gap (a pale tint still reads as its ink);
    a darker one pays in full (a dark overlap never collapses to one ink). Off-palette pixels (> 4 ΔE from every colour) pay the ink penalty.
+   Screened colours are candidates too; a shape's colour never overrides a pixel whose best is a screened colour.
 5. 7×7 mode filter removes risograph grain.
 6. **Fine lines:** anything narrower than `FINE_PX` 11 px and `FINE_DE` 6 L darker than its surroundings, which the steps above lost,
    is repainted in the nearest palette colour darker than its fill. Expect the palette's next-darker colour, which can be a big step.
+7. **Dots:** screened colours print as halftone dots (the plate step; see Options).
 
 Knobs are constants at the top of `separate.py`. Plates come out at 3× the image size (a 1264 px wide image gives 3792 px: ~16 cm at 600 dpi, ~8 cm at the 1200 dpi
 our shop asks for sharp curves).

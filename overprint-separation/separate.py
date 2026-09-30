@@ -14,6 +14,9 @@ spiral, a small shadow) are traced too and printed in a colour darker than the f
     python separate.py <image.png> <palette.json> --print other.json --screen 4:60
         # classify against palette.json (the colours the art was drawn in), print with other.json's inks,
         # and print every pixel labelled mask 4 (ink 3 alone) as a 60% halftone instead of solid
+    python separate.py <image.png> <palette.json> --screen-colour F8C4A2=2:50 --width 12
+        # the art's own #F8C4A2 (a face) becomes one more colour, printed as ink 2 in 50% dots; the dots are 80 lpi
+        # when the picture prints 12 cm wide (without --width: at 600 dpi, the size the 分色 page quotes)
 """
 import sys
 from pathlib import Path
@@ -49,10 +52,15 @@ FINE_MIN = 4  # px at original size; smaller pieces are grain
 BLEND_R = 3
 BLEND_RGB = 20.0
 N_INKS = np.array([max(bin(m).count("1") - 1, 0) for m in range(16)])  # paper and solo inks are free
-# halftone screens (--screen MASK:PCT): pixels labelled MASK print that mask's inks as dots instead of solid.
-# ponytail: plain round AM dots and no dot-gain curve. Riso dots gain ~10-20%, so ask for less than the tone you want.
-SCREEN_PX = 6  # dot pitch in plate pixels; plates are ~300 dpi at 32 cm, so 6 px = 50 lpi
-SCREEN_ANGLE = (15, 75, 45, 0)  # degrees per ink, like CMYK, so two screened inks don't moire
+MASKS = np.arange(16)  # labels 0-15 are the palette's 16 colours, each its own ink mask; screened colours come after
+# halftone screens: --screen MASK:PCT prints every pixel of that colour as dots; --screen-colour RRGGBB=MASK:PCT adds the
+# art's own RRGGBB as one more colour, printed as MASK's inks in PCT% dots (a face paler than the hair it shares an ink with).
+# ponytail: plain round AM dots and no dot-gain curve. Riso and letterpress dots gain ~10-20%, so ask for less than you want.
+LPI = 80  # screen ruling in lines per inch, at the printed size
+DPI = 600  # the printed plate resolution when --width isn't given: the size the 分色 page quotes as 600 dpi
+# per ink 15, 75, 45, 0 degrees (like CMYK, so two screened inks don't moire), as literals so separate.js matches bit for bit
+SCREEN_COS = (0.9659258262890683, 0.25881904510252074, 0.7071067811865476, 1.0)
+SCREEN_SIN = (0.25881904510252074, 0.9659258262890683, 0.7071067811865476, 0.0)
 
 
 def load_set(path):
@@ -82,10 +90,13 @@ def to_lab(rgb):
     return np.stack([116 * f[..., 1] - 16, 500 * (f[..., 0] - f[..., 1]), 200 * (f[..., 1] - f[..., 2])], -1)
 
 
-def classify(rgb, pal, prefer=None):
-    """Label each pixel with the ink mask of its nearest printable colour; returns (labels, mean dE).
-    prefer: optional per-pixel label (-1 = none) that wins wherever it scores within TIE_DE of the pixel's best."""
+def classify(rgb, pal, prefer=None, masks=MASKS):
+    """Label each pixel with its nearest printable colour (an index into pal, whose ink masks are masks); returns
+    (labels, mean dE). prefer: optional per-pixel label (-1 = none) that wins wherever it scores within TIE_DE of the best,
+    except over a screened colour (label 16+): those are chosen to tell apart areas sharing an ink (a face beside the hair),
+    which a soft boundary often leaves in one traced shape, so a pixel that looks most like one keeps it."""
     lab, pal_lab = to_lab(rgb).reshape(-1, 3), to_lab(pal)
+    cost = INK_PENALTY * N_INKS[masks]
     idx = np.empty(len(lab), np.uint8)
     de = 0.0
     for i in range(0, len(lab), 1 << 20):  # chunked: the 3x image is ~29M pixels
@@ -95,23 +106,41 @@ def classify(rgb, pal, prefer=None):
         dl = np.where(diff[..., 0] > 0, L_WEIGHT, 1.0) * diff[..., 0]
         d = np.sqrt(dl ** 2 + diff[..., 1] ** 2 + diff[..., 2] ** 2)
         # the ink penalty only breaks ties between off-palette guesses; a near-exact printable colour always wins
-        sc = d + INK_PENALTY * N_INKS * (d > EXACT_DE)
+        sc = d + cost * (d > EXACT_DE)
         best = sc.argmin(1)
         if prefer is not None:
             p, r = prefer.ravel()[i:i + len(d)].astype(np.intp), np.arange(len(d))
-            best = np.where((p >= 0) & (sc[r, np.maximum(p, 0)] - sc[r, best] < TIE_DE), p, best)
+            wins = (p >= 0) & (sc[r, np.maximum(p, 0)] - sc[r, best] < TIE_DE) & ((best < 16) | (p >= 16))
+            best = np.where(wins, p, best)
         idx[i:i + len(d)] = best
         de += d[np.arange(len(d)), best].sum()
     return idx.reshape(rgb.shape[:2]), de / len(lab)
 
 
-def screen(h, w, ink, pct):
-    """On/off halftone dots covering pct of an h x w plate, at the ink's own screen angle."""
-    a = np.radians(SCREEN_ANGLE[ink])
-    y, x = np.mgrid[:h, :w].astype(np.float32)
-    k = np.float32(2 * np.pi / SCREEN_PX)
-    spot = np.cos((x * np.cos(a) + y * np.sin(a)) * k) + np.cos((y * np.cos(a) - x * np.sin(a)) * k)
-    return spot > np.quantile(spot, 1 - pct)
+def screen(ys, xs, ink, pct, pitch):
+    """Whether plate pixels (ys, xs) fall inside round halftone dots covering pct, pitch plate px apart at the ink's own
+    angle. Plain arithmetic per pixel (no trig), so separate.js draws the same dots bit for bit."""
+    c, s = SCREEN_COS[ink], SCREEN_SIN[ink]
+    x, y = xs + 0.5, ys + 0.5
+    u, v = (x * c + y * s) / pitch, (y * c - x * s) / pitch
+    fu, fv = u - np.floor(u) - 0.5, v - np.floor(v) - 0.5
+    if pct <= 0.5:  # an ink dot in the middle of each cell
+        return fu * fu + fv * fv < pct / np.pi
+    gu, gv = 0.5 - np.abs(fu), 0.5 - np.abs(fv)  # past 50%: round paper holes at the cell corners
+    return gu * gu + gv * gv >= (1 - pct) / np.pi
+
+
+def print_masks(idx, masks, pcts, pitch):
+    """The ink mask each plate pixel prints: its label's mask, as halftone dots where that label has a pct (0 = solid)."""
+    out = masks[idx].astype(np.uint8)
+    for k in np.nonzero(pcts)[0]:
+        ys, xs = np.nonzero(idx == k)
+        on = np.zeros(len(ys), np.uint8)
+        for b in range(4):
+            if masks[k] >> b & 1:
+                on |= screen(ys, xs, b, pcts[k], pitch).astype(np.uint8) << b
+        out[ys, xs] = on
+    return out
 
 
 def self_check(palette_paths):
@@ -153,7 +182,21 @@ def self_check(palette_paths):
                 assert np.isin(idx, [c1, c2]).all(), f"{Path(n).stem}: a soft edge between colours {c1} and {c2} prints a third colour"
     finally:
         INK_PENALTY = saved
-    assert abs(screen(300, 300, 2, 0.4).mean() - 0.4) < 0.01, "a 40% screen does not cover 40%"
+    ys, xs = (a.ravel() for a in np.mgrid[:300, :300])
+    for pct in (0.2, 0.5, 0.8):
+        assert abs(screen(ys, xs, 2, pct, DPI / LPI).mean() - pct) < 0.02, f"a {pct:.0%} screen does not cover {pct:.0%}"
+    # a screened colour: a fill paler than ink 2 (a face) prints as ink 2 dots, the solid ink 2 beside it (hair) stays solid
+    pal = palette(palette_paths[0])
+    face = pal[2] * 0.6 + pal[0] * 0.4
+    img = np.full((90, 90, 3), pal[0])
+    img[10:80, 10:45], img[10:80, 45:80] = pal[2], face
+    img = np.clip(img + np.random.default_rng(0).normal(0, 1.5, img.shape), 0, 255).astype(np.uint8)
+    masks = np.append(MASKS, 2)
+    idx = labels(Image.fromarray(img), np.vstack([pal, face]), masks)[0]
+    hair, skin = idx[15 * SCALE:75 * SCALE, 15 * SCALE:40 * SCALE], idx[15 * SCALE:75 * SCALE, 50 * SCALE:75 * SCALE]
+    assert (hair == 2).mean() > 0.99 and (skin == 16).mean() > 0.99, "a screened colour is not told apart from its solid ink"
+    dots = print_masks(idx, masks, np.append(np.zeros(16), 0.5), DPI / LPI)[15 * SCALE:75 * SCALE, 50 * SCALE:75 * SCALE]
+    assert abs((dots == 2).mean() - 0.5) < 0.03 and np.isin(dots, [0, 2]).all(), "a 50% screened colour does not print 50% dots"
     print("self-check ok:", ", ".join(Path(n).stem for n in palette_paths))
 
 
@@ -167,12 +210,12 @@ def trace(orig):
     return lines, shape, n
 
 
-def shape_colours(orig, pal):
+def shape_colours(orig, pal, masks=MASKS):
     """Each shape's printable colour from its mean colour; lines and tiny shapes get -1 (no preference)."""
     lines, shape, n = trace(orig)
     rgb, s = np.asarray(orig, dtype=np.float64).reshape(-1, 3), shape.ravel()
     mean = np.stack([np.bincount(s, rgb[:, k], minlength=n) for k in range(3)], 1) / np.maximum(np.bincount(s, minlength=n), 1)[:, None]
-    lbl = classify(mean[None], pal)[0][0].astype(np.int8)
+    lbl = classify(mean[None], pal, masks=masks)[0][0].astype(np.int8)
     lbl[0] = -1
     return lines, shape, lbl, mean
 
@@ -204,9 +247,10 @@ def edge_prefer(shape, mean, lbl, img, prefer):
     prefer[ys[mix], xs[mix]] = np.where(t[mix] < 0.5, lbl[a[mix]], lbl[b[mix]])
 
 
-def fine_features(orig, img, pal, idx):
+def fine_features(orig, img, pal, idx, masks=MASKS):
     """Paint fine dark features over idx (in place). Each connected piece takes the printable colour nearest to it
-    (plain dE, so a pale grey line stays as light as the palette allows) among those darker than the fill it sits on."""
+    (plain dE, so a pale grey line stays as light as the palette allows) among those darker than the fill it sits on.
+    Only the palette's own 16 colours: a line printed as halftone dots would break up."""
     a = np.asarray(orig, dtype=np.float64)
     pal_lab = to_lab(pal)
     # the surroundings: closing wipes out anything dark and narrower than FINE_PX
@@ -221,7 +265,7 @@ def fine_features(orig, img, pal, idx):
     # pieces: connected feature pixels of one nearest colour, so touching features keep their own colours
     # (a yellow rope tied to a slate harpoon, a gold watch hung on blue outlines)
     near = np.full((h, w), 255, np.uint8)
-    near[ys, xs] = classify(img[ys, xs][None], pal)[0][0]
+    near[ys, xs] = classify(img[ys, xs][None], pal[:16])[0][0]
     seg, n = np.zeros((h, w), np.int32), 1
     for m in np.unique(near[ys, xs]):
         c, s = cv2.connectedComponents((near == m).astype(np.uint8), connectivity=8)
@@ -232,7 +276,8 @@ def fine_features(orig, img, pal, idx):
     grown = cv2.dilate(seg.astype(np.float32), np.ones((9, 9), np.uint8)).astype(np.intp)
     ry, rx = np.nonzero((grown > 0) & (diff <= 2))
     rs, rl = grown[ry, rx], idx[ry, rx]
-    cnt = np.bincount(rs * 16 + rl, minlength=n * 16).reshape(n, 16)
+    K = len(pal)
+    cnt = np.bincount(rs * K + rl, minlength=n * K).reshape(n, K)
     host = np.where(cnt >= 0.25 * cnt.sum(1, keepdims=True), pal_lab[None, :, 0], np.inf).argmin(1)
     # and how light that fill really is in the art: a drop's pointed tip is as dark as its body, not a line on it
     on_host = rl == host[rs]
@@ -246,9 +291,10 @@ def fine_features(orig, img, pal, idx):
     col /= np.maximum(np.bincount(s[core], minlength=n), 1)[:, None]
     col_lab = to_lab(col)
     d = np.linalg.norm(col_lab[:, None] - pal_lab[None], axis=2)
-    sc = d + INK_PENALTY * N_INKS * (d > EXACT_DE)
+    sc = d + INK_PENALTY * N_INKS[masks] * (d > EXACT_DE)
     darker = pal_lab[None, :, 0] < pal_lab[host, 0][:, None] - 2  # colours that still show against the fill
     sc[~darker] = np.inf
+    sc[:, 16:] = np.inf
     pick = sc.argmin(1)
     own = np.zeros(n, np.intp)
     own[s] = near[ys, xs]
@@ -262,43 +308,52 @@ def fine_features(orig, img, pal, idx):
     idx[ys[on], xs[on]] = pick[s[on]]
 
 
-def labels(orig, pal):
-    """Ink mask per pixel at SCALE x the original; returns (labels, mean dE, traced lines)."""
+def labels(orig, pal, masks=MASKS):
+    """Printable colour per pixel at SCALE x the original, as an index into pal (the palette's 16 colours are their own
+    ink masks; screened colours follow, their masks in masks); returns (labels, mean dE, traced lines)."""
     # ponytail: 3x Lanczos upscale first so 1-2px line art keeps a solid core instead of breaking into dashes
     img = np.asarray(orig.resize((orig.width * SCALE, orig.height * SCALE), Image.LANCZOS), dtype=np.float64)
     h, w, _ = img.shape
     # lines keep their per-pixel colour, so thin features (outlines, a rope) survive as they did before shapes
-    lines, shape, lbl, mean = shape_colours(orig, pal)
+    lines, shape, lbl, mean = shape_colours(orig, pal, masks)
     prefer = lbl[cv2.resize(shape, (w, h), interpolation=cv2.INTER_NEAREST)]
     edge_prefer(shape, mean, lbl, img, prefer)
-    idx, de = classify(img, pal, prefer)
+    idx, de = classify(img, pal, prefer, masks)
     # ponytail: mode filter kills risograph grain speckle; raise the size if plates look noisy
     idx = np.array(Image.fromarray(idx, "L").filter(ImageFilter.ModeFilter(7)))
-    fine_features(orig, img, pal, idx)
+    fine_features(orig, img, pal, idx, masks)
     return idx, de, lines
 
 
-def separate(src, palette_path, out_dir, print_path=None, screens={}):
+def separate(src, palette_path, out_dir, print_path=None, screens={}, colours=(), width=None):
+    """screens: {mask: pct} prints every pixel of that colour as dots. colours: [(RRGGBB, mask, pct)] adds the art's own
+    colour RRGGBB as one more printable colour, printed as mask's inks in pct dots. width: printed width in cm (sets
+    the plates' dpi, so the dots come out LPI lines per inch); None = printed at DPI."""
     orig = Image.open(src).convert("RGB")
-    idx, de, lines = labels(orig, palette(palette_path))
+    rgb = [[int(c[i:i + 2], 16) for i in (0, 2, 4)] for c, _, _ in colours]
+    pal = np.vstack([palette(palette_path), np.array(rgb, dtype=np.float64).reshape(-1, 3)])
+    masks = np.concatenate([MASKS, [m for _, m, _ in colours]]).astype(np.intp)
+    pcts = np.zeros(len(pal))
+    for m, pct in screens.items():
+        pcts[m] = pct
+    pcts[16:] = [pct for _, _, pct in colours]
+    idx, de, lines = labels(orig, pal, masks)
     h, w = idx.shape
+    dpi = DPI if width is None else w * 2.54 / width
+    printed = print_masks(idx, masks, pcts, dpi / LPI)
     # the labels say which inks go where; --print swaps in other inks (the art stays drawn for palette_path)
-    names, pal = load_set(print_path or palette_path)[0], palette(print_path or palette_path)
+    names, ink_pal = load_set(print_path or palette_path)
 
     stem = Path(src).stem
     Image.fromarray(np.where(lines, 0, 255).astype(np.uint8), "L").save(out_dir / f"{stem}-lines.png")
-    plates, printed = [], np.zeros_like(idx)
+    plates = []
     for b, n in enumerate(names):
-        on = (idx >> b) & 1
-        for m, pct in screens.items():
-            if m >> b & 1:
-                on = np.where(idx == m, screen(h, w, b, pct), on).astype(np.uint8)
-        printed |= on << b
+        on = (printed >> b) & 1
         plate = Image.fromarray(np.where(on, 0, 255).astype(np.uint8), "L")
-        plate.save(out_dir / f"{stem}-plate{b + 1}-{n}.png")
+        plate.save(out_dir / f"{stem}-plate{b + 1}-{n}.png", dpi=(dpi, dpi))
         plates.append((n, on.mean()))
-    proof = Image.fromarray(pal[printed].astype(np.uint8), "RGB")  # from the plates, so halftone dots show
-    proof.save(out_dir / f"{stem}-proof.png")
+    proof = Image.fromarray(ink_pal[printed].astype(np.uint8), "RGB")  # from the plates, so halftone dots show
+    proof.save(out_dir / f"{stem}-proof.png", dpi=(dpi, dpi))
 
     # sheet: original | proof on top, the four plates below
     tw, th = w // (2 * SCALE), h // (2 * SCALE)
@@ -308,7 +363,7 @@ def separate(src, palette_path, out_dir, print_path=None, screens={}):
     for b, n in enumerate(names):
         sheet.paste(Image.open(out_dir / f"{stem}-plate{b + 1}-{n}.png").convert("RGB").resize((tw, th)), (tw * b, th * 2))
     sheet.save(out_dir / f"{stem}-sheet.png")
-    return de, plates, np.bincount(idx.ravel(), minlength=16) / idx.size
+    return de, plates, np.bincount(idx.ravel(), minlength=len(pal)) / idx.size, w * 2.54 / dpi
 
 
 if __name__ == "__main__":
@@ -321,18 +376,32 @@ if __name__ == "__main__":
         i = sys.argv.index("--penalty")
         INK_PENALTY = float(sys.argv.pop(i + 1))
         sys.argv.pop(i)
-    print_path, screens = None, {}
-    while "--print" in sys.argv or "--screen" in sys.argv:
-        i = next(i for i, a in enumerate(sys.argv) if a in ("--print", "--screen"))
+    print_path, screens, colours, width = None, {}, [], None
+    flags = ("--print", "--screen", "--screen-colour", "--width")
+    while any(f in sys.argv for f in flags):
+        i = next(i for i, a in enumerate(sys.argv) if a in flags)
         flag, val = sys.argv.pop(i), sys.argv.pop(i)
         if flag == "--print":
             print_path = val
-        else:
+        elif flag == "--width":
+            width = float(val)
+        elif flag == "--screen":
             m, pct = val.split(":")
             screens[int(m)] = float(pct) / 100
+        else:  # --screen-colour F8C4A2=2:50
+            hexc, spec = val.lstrip("#").split("=")
+            m, pct = spec.split(":")
+            colours.append((hexc, int(m), float(pct) / 100))
+    for m, pct in [*screens.items(), *((m, p) for _, m, p in colours)]:
+        if not (1 <= m <= 15 and 0 < pct < 1):
+            sys.exit(f"--screen / --screen-colour: the mask must be 1-15 and the percentage 1-99 (got {m}:{pct:.0%})")
     src, palette_path = sys.argv[1], sys.argv[2]
-    de, plates, share = separate(src, palette_path, Path(src).parent, print_path, screens)
+    de, plates, share, cm = separate(src, palette_path, Path(src).parent, print_path, screens, colours, width)
     print(f"{Path(palette_path).stem}: mean dE to nearest printable colour {de:.1f}; ink coverage " +
           ", ".join(f"{n} {c:.0%}" for n, c in plates))
     # share of the image per printable colour, by ink mask (0 = bare paper); < 0.1% counts as unused
-    print(f"colours used {(share[1:] >= 0.001).sum()}/15: " + " ".join(f"{m}:{share[m]:.1%}" for m in range(16)))
+    print(f"colours used {(share[1:16] >= 0.001).sum()}/15: " + " ".join(f"{m}:{share[m]:.1%}" for m in range(16)))
+    for k, (hexc, m, pct) in enumerate(colours):
+        print(f"screened colour #{hexc} (mask {m} at {pct:.0%}): {share[16 + k]:.1%} of the picture")
+    if screens or colours:
+        print(f"the dots are {LPI} lpi when the picture prints {cm:.1f} cm wide (--width to change)")
