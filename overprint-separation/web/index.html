@@ -23,7 +23,7 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--paper); color: var(--ink); font: 400 16px/1.7 var(--body); }
-  .wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 32px 56px; }
+  .wrap { max-width: 1440px; margin: 0 auto; padding-inline: 20px; padding-block: 32px 56px; }
   p, li { line-break: strict; text-wrap: pretty; }
   h1, h2, h3 { font-family: var(--display); color: var(--ink); text-wrap: balance; margin: 0; }
   h1 { font-size: clamp(32px, 5vw, 48px); line-height: 1.1; letter-spacing: -0.01em; }
@@ -31,7 +31,7 @@
   .lead { max-width: 60ch; margin: 12px 0 0; color: var(--muted); font-size: 18px; }
   .kicker { font-weight: 600; letter-spacing: 0.12em; color: var(--muted); margin: 0 0 8px; }
   .press { height: 2px; background: var(--ink); margin: 28px 0 32px; box-shadow: 0 4px 0 -3px var(--ink); }
-  .bench { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 40px; align-items: start; }
+  .bench { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 40px; align-items: start; }
   @media (max-width: 860px) { .bench { grid-template-columns: minmax(0, 1fr); gap: 32px; } }
   .ticket { display: grid; gap: 28px; }
   .field { display: grid; gap: 10px; border-top: 2px solid var(--ink); padding-top: 12px; }
@@ -68,8 +68,16 @@
   figcaption span { font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
   .frame { background: var(--sheet); border: 1px solid var(--rule); overflow: hidden; }
   .frame canvas { display: block; width: 100%; height: auto; }
-  .zoomed .frame { overflow: auto; max-height: 70vh; }
-  .zoomed .frame canvas { width: auto; max-width: none; }
+  .compare .frame { cursor: zoom-in; }
+  /* 放大檢查: both panels fill the window at plate size; drag either one and both move */
+  .viewbar { display: none; }
+  .viewer.zoomed { position: fixed; inset: 0; z-index: 10; background: var(--paper); padding: 16px; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 12px; }
+  .zoomed .viewbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
+  .zoomed .compare { grid-auto-rows: minmax(0, 1fr); min-height: 0; }
+  .zoomed figure { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+  .zoomed .frame { overflow: auto; overscroll-behavior: contain; cursor: grab; user-select: none; }
+  .zoomed .frame.dragging { cursor: grabbing; }
+  .zoomed .frame canvas { max-width: none; }
   .bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
   .plates { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
   @media (max-width: 560px) { .plates { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -131,12 +139,18 @@
     <section class="result" aria-label="分色結果">
       <div class="bar">
         <h2>印刷模擬</h2>
-        <button class="btn" type="button" id="zoomBtn" aria-pressed="false">放大檢查</button>
+        <button class="btn" type="button" id="zoomBtn">放大檢查</button>
       </div>
       <p class="status" id="status" role="status" aria-live="polite">分色中…</p>
-      <div class="compare" id="compare">
-        <figure><figcaption>原圖 <span id="origSize"></span></figcaption><div class="frame" id="origFrame"><canvas id="origCanvas" width="1" height="1"></canvas></div></figure>
-        <figure><figcaption>印刷模擬 <span id="proofSize"></span></figcaption><div class="frame" id="proofFrame"><canvas id="proofCanvas" width="1" height="1"></canvas></div></figure>
+      <div class="viewer" id="viewer">
+        <div class="viewbar">
+          <p class="note">按住圖片拖曳就能移動，兩張圖會一起動。印刷模擬是印版的實際大小。</p>
+          <button class="btn" type="button" id="closeZoom">關閉放大</button>
+        </div>
+        <div class="compare" id="compare">
+          <figure><figcaption>原圖 <span id="origSize"></span></figcaption><div class="frame" id="origFrame"><canvas id="origCanvas" width="1" height="1"></canvas></div></figure>
+          <figure><figcaption>印刷模擬 <span id="proofSize"></span></figcaption><div class="frame" id="proofFrame"><canvas id="proofCanvas" width="1" height="1"></canvas></div></figure>
+        </div>
       </div>
       <p class="stats" id="stats"></p>
 
@@ -340,15 +354,47 @@ function show(r, secs) {
   setStatus('分色完成。');
 }
 
-// ---------- zoom: both panels at full plate size, scrolled together ----------
-$('zoomBtn').addEventListener('click', () => {
-  const on = $('compare').classList.toggle('zoomed');
-  $('zoomBtn').setAttribute('aria-pressed', String(on));
-  $('zoomBtn').textContent = on ? '看整張' : '放大檢查';
-  const oc = $('origCanvas');
-  oc.style.width = on ? `${oc.width * 3}px` : '';
-  oc.style.imageRendering = on ? 'pixelated' : '';
-});
+// ---------- zoom: both panels fill the window at plate size, dragged or scrolled together ----------
+const zoomed = () => $('viewer').classList.contains('zoomed');
+function setZoom(on, fx = 0.5, fy = 0.5) { // fx, fy: the spot to centre, as a fraction of the picture
+  if (zoomed() === on) return;
+  $('viewer').classList.toggle('zoomed', on);
+  document.documentElement.style.overflow = on ? 'hidden' : '';
+  for (const c of [$('origCanvas'), $('proofCanvas')]) { // the proof may still be the blank, original-sized one
+    c.style.width = on ? `${state.w * S.SCALE}px` : '';
+    c.style.imageRendering = on ? 'pixelated' : '';
+  }
+  if (!on) { $('zoomBtn').focus(); return; }
+  const f = $('proofFrame'); // its scroll handler below moves the original too
+  f.scrollLeft = fx * f.scrollWidth - f.clientWidth / 2;
+  f.scrollTop = fy * f.scrollHeight - f.clientHeight / 2;
+  $('closeZoom').focus();
+}
+$('zoomBtn').addEventListener('click', () => setZoom(true));
+$('closeZoom').addEventListener('click', () => setZoom(false));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setZoom(false); });
+let drag = null;
+for (const id of ['origFrame', 'proofFrame']) {
+  const f = $(id);
+  f.addEventListener('click', (e) => { // click a spot on the small preview to zoom in there
+    if (zoomed() || !state.rgb) return;
+    const r = f.getBoundingClientRect();
+    setZoom(true, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+  });
+  f.addEventListener('pointerdown', (e) => {
+    if (!zoomed() || e.pointerType === 'touch' || e.button !== 0) return; // a finger already pans a scroll box
+    e.preventDefault();
+    drag = { f, x: e.clientX + f.scrollLeft, y: e.clientY + f.scrollTop };
+    f.setPointerCapture(e.pointerId);
+    f.classList.add('dragging');
+  });
+  f.addEventListener('pointermove', (e) => {
+    if (drag?.f !== f) return;
+    f.scrollLeft = drag.x - e.clientX;
+    f.scrollTop = drag.y - e.clientY;
+  });
+  f.addEventListener('lostpointercapture', () => { drag = null; f.classList.remove('dragging'); });
+}
 let leader = null, calm;
 for (const [a, b] of [['origFrame', 'proofFrame'], ['proofFrame', 'origFrame']]) {
   $(a).addEventListener('scroll', () => {
