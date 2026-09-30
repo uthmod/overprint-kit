@@ -62,8 +62,10 @@ def load_set(path):
     p = json.loads(Path(path).read_text(encoding="utf-8"))
     if len(p["inks"]) != 4 or len(p["cells"]) != 16:
         sys.exit(f"{path}: 分色需要 4 支墨的色盤（這個有 {len(p['inks'])} 支）")
-    names = [i["name"].replace(" ", "") for i in p["inks"]]
-    return names, np.array([[int(c["hex"][i:i + 2], 16) for i in (0, 2, 4)] for c in p["cells"]], dtype=np.float64)
+    field = lambda x, k: x[k] if isinstance(x, dict) else x  # older palette.json files: plain "E1E3E0" and "720U"
+    names = [field(i, "name").replace(" ", "") for i in p["inks"]]
+    hexes = [field(c, "hex").lstrip("#") for c in p["cells"]]
+    return names, np.array([[int(h[i:i + 2], 16) for i in (0, 2, 4)] for h in hexes], dtype=np.float64)
 
 
 def palette(path):

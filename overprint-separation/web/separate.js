@@ -32,13 +32,14 @@
     if (!p || !Array.isArray(p.inks) || !Array.isArray(p.cells)) throw new Error('這不是 palette.json：找不到 inks 和 cells');
     if (p.inks.length !== 4 || p.cells.length !== 16) throw new Error(`分色需要 4 支墨的色盤（這個有 ${p.inks.length} 支）`);
     const rgb = new Float64Array(48), lab = new Float64Array(48);
+    const field = (x, k) => (x && typeof x === 'object' ? x[k] : x); // older palette.json files: plain "E1E3E0" and "720U"
     p.cells.forEach((c, m) => {
-      const hex = String(c && c.hex).replace('#', '');
-      if (!/^[0-9a-f]{6}$/i.test(hex)) throw new Error(`palette.json 第 ${m + 1} 格的色碼看不懂：${c && c.hex}`);
+      const hex = String(field(c, 'hex')).replace('#', '');
+      if (!/^[0-9a-f]{6}$/i.test(hex)) throw new Error(`palette.json 第 ${m + 1} 格的色碼看不懂：${field(c, 'hex')}`);
       for (let k = 0; k < 3; k++) rgb[m * 3 + k] = parseInt(hex.slice(2 * k, 2 * k + 2), 16);
       labF(rgb[m * 3], rgb[m * 3 + 1], rgb[m * 3 + 2], lab, m * 3);
     });
-    return { name: String(p.name || ''), inks: p.inks.map((i) => String(i.name)), rgb, lab };
+    return { name: String(p.name || ''), inks: p.inks.map((i) => String(field(i, 'name'))), rgb, lab };
   }
 
   // ---------- nearest printable colour ----------
