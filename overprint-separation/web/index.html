@@ -104,6 +104,37 @@
   .tips { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
   footer { margin-top: 48px; border-top: 1px solid var(--rule); padding-top: 16px; color: var(--muted); display: grid; gap: 4px; }
   footer a, .lead a, .note a, .tips a { color: var(--gold); }
+  [hidden] { display: none !important; }
+  /* tabs: 分色 | 色盤產生器 */
+  .tabs { display: flex; flex-wrap: wrap; border-bottom: 2px solid var(--ink); margin: -12px 0 28px; }
+  .tabs button { min-height: 48px; padding: 10px 20px; border: 0; border-bottom: 4px solid transparent; margin-bottom: -2px; background: none;
+    font: 600 18px/1.3 var(--body); color: var(--muted); cursor: pointer; }
+  .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--gold); }
+  .tabs button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  /* 色盤產生器 */
+  .presets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .preset { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 10px; border: 1px solid var(--rule); background: var(--sheet);
+    font: 600 16px/1.3 var(--body); color: var(--ink); cursor: pointer; text-align: left; }
+  .preset.on { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
+  .preset .dots { display: flex; }
+  .preset .dots span { width: 12px; height: 12px; border: 1px solid rgba(28, 25, 23, 0.25); margin-right: -3px; }
+  .genlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .genink { display: grid; grid-template-columns: 18px 32px minmax(0, 1fr) 40px 40px 40px; gap: 6px; align-items: center; }
+  .genink .num { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .genink .chip { width: 32px; height: 32px; }
+  .genink input { width: 100%; min-height: 44px; padding: 6px 8px; font: 600 16px var(--body); color: var(--ink); background: var(--sheet); border: 1px solid var(--rule); }
+  .genink input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .genink .note { grid-column: 3 / -1; }
+  .btn.icon { min-width: 40px; padding: 0; font-size: 18px; }
+  .gencard { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--rule); }
+  .genrow { display: grid; gap: 6px; }
+  .gencell { min-height: 72px; padding: 6px 8px; border: 0; display: flex; align-items: flex-start; font: 600 16px/1.2 var(--body);
+    font-variant-numeric: tabular-nums; cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+  @media (max-width: 560px) { .gencell { padding: 6px 5px; } }
+  .gencell.warn { outline: 3px solid var(--ink); outline-offset: 2px; }
+  .gencell:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+  .geninfo { margin: 0; min-height: 3.4em; padding: 10px 12px; border: 1px solid var(--rule); background: var(--sheet); }
+  .bar.left { justify-content: flex-start; }
   @media (prefers-reduced-motion: no-preference) { .btn { transition: background-color 0.15s ease-out; } }
 </style>
 
@@ -111,11 +142,16 @@
   <header>
     <p class="kicker">時分印刷 TeleportPress・疊印工具包</p>
     <h1>疊印分色</h1>
-    <p class="lead">把一張只用色盤顏色畫的圖，拆成四塊印版，一支油墨一塊，再做一張印刷模擬，送印前先看效果。圖片只在您的瀏覽器裡處理，不會上傳到任何地方。</p>
+    <p class="lead">請放一張只用色盤顏色畫的圖。色盤是四支油墨，加上它們互相疊印（印在同一處）出來的顏色。頁面會把圖拆成四塊印版，一支油墨一塊，印版就是這支油墨要印的圖樣；再做一張印刷模擬，讓您送印前先看效果。圖片只在您的瀏覽器裡處理，不會上傳到任何地方。</p>
   </header>
   <div class="press" aria-hidden="true"></div>
 
-  <main class="bench">
+  <div class="tabs" role="tablist" aria-label="工具">
+    <button type="button" role="tab" id="tabbtn-separate" aria-controls="tab-separate" aria-selected="true">分色</button>
+    <button type="button" role="tab" id="tabbtn-palette" aria-controls="tab-palette" aria-selected="false" tabindex="-1">色盤產生器</button>
+  </div>
+
+  <main class="bench" id="tab-separate" role="tabpanel" aria-labelledby="tabbtn-separate">
     <section class="ticket" aria-label="分色設定">
       <div class="field">
         <h2><span>1</span>您的圖</h2>
@@ -124,7 +160,7 @@
             <button class="btn" type="button" tabindex="-1" aria-hidden="true">選一張圖</button>
             <input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif,image/bmp" aria-label="選一張圖（PNG、JPG 或 WebP）">
           </div>
-          <p class="note">PNG、JPG 或 WebP，也可以直接把圖拖到這個頁面上。透明的地方當作紙色；太大的圖會自動縮小。怎麼準備圖、圖要多大，請看頁面下方的<a href="#prepare">「準備您的圖」</a>。</p>
+          <p class="note">請選 PNG、JPG 或 WebP 的圖，也可以直接把圖拖到這個頁面上。透明的地方會當作紙色。太大的圖會自動縮小。怎麼準備圖、圖要多大，請看頁面下方的<a href="#prepare">「準備您的圖」</a>和「圖的大小怎麼影響分色」。</p>
           <p class="note" id="imageName" role="status"></p>
         </div>
       </div>
@@ -134,32 +170,42 @@
         <select id="paletteSelect" aria-label="選色盤"></select>
         <label class="paste" for="paletteText">或貼上您的色盤</label>
         <textarea id="paletteText" rows="3" placeholder="例如：223 U、720 U、4163 U、2159 U" aria-describedby="paletteHelp"></textarea>
-        <p class="note" id="paletteHelp">在線上的疊印色彩矩陣產生器按「複製內容」，再貼到這裡。投票選的色盤，直接從上面選，或貼上信裡那四支油墨的名稱也可以。</p>
+        <p class="note" id="paletteHelp">投票選的色盤，請直接從上面的選單選。也可以貼上信裡那四支油墨的名稱，例如 223 U（Pantone 色號，U 代表未塗佈紙）。自己搭配的色盤，請到上方的「色盤產生器」分頁做好，再按「用這組色盤分色」。在疊印色彩矩陣產生器做好的色盤，按「複製內容」，再整段貼到這裡。</p>
         <p class="note" id="paletteMsg" role="status"></p>
         <div class="file">
-          <button class="btn link" type="button" tabindex="-1" aria-hidden="true">也可以選一個 palette.json 檔案</button>
-          <input id="paletteInput" type="file" accept=".json,application/json" aria-label="選一個 palette.json 檔案">
+          <button class="btn link" type="button" tabindex="-1" aria-hidden="true">也可以選色盤檔案（palette.json）</button>
+          <input id="paletteInput" type="file" accept=".json,application/json" aria-label="選色盤檔案（palette.json）">
         </div>
         <ol class="inks" id="inks" aria-label="四支油墨，照印刷順序"></ol>
         <div class="strip" id="strip" aria-hidden="true"></div>
-        <p class="note">上面是印刷順序，先印的在前面；下面是這組色盤的 16 種顏色。</p>
+        <p class="note">上面的清單是四支油墨，照印刷順序排，先印的在前面。清單下的小方格，是這組色盤的 16 種顏色：紙色、四個單色，和 11 個疊印色。</p>
       </div>
 
       <div class="field">
         <h2><span>3</span>圖的類型</h2>
         <div class="choice" role="radiogroup" aria-label="圖的類型">
           <label><input type="radio" name="penalty" value="5" id="penalty5" checked><span><b>保留細節</b><small>花瓣、衣服皺摺這類深淺層次，盡量用疊印色留下來。大部分的圖選這個。</small></span></label>
-          <label><input type="radio" name="penalty" value="8" id="penalty8"><span><b>簡潔色塊</b><small>偏淡、混濁的顏色歸到單色，少用疊印色。只想要乾淨的大色塊時選這個。</small></span></label>
+          <label><input type="radio" name="penalty" value="8" id="penalty8"><span><b>簡潔色塊</b><small>偏淡、混濁的顏色，改用單一油墨印，少用疊印色。想要乾淨的大色塊時，選這個。</small></span></label>
         </div>
       </div>
 
       <div class="field">
         <h2><span>4</span>網點（選用）</h2>
-        <p class="note">某個顏色要印得比較淡，但它和旁邊的顏色會分到同一支墨時（例如臉和頭髮），可以把它印成網點。按下面的按鈕，再點一下圖上那一塊：只有點到的那一塊印成網點，其他同色的地方照樣印實色。同色的另一塊也要網點，再按一次按鈕、點那裡；點到的顏色差很多時（例如比臉更淡的鐘面），會另外加一個網點色，濃淡可以分開設。比網點色深的地方照樣印實色，所以把淺的部分印成網點，深的部分就會顯出來（範例的茶杯：杯身是網點，杯內是實色）。</p>
+        <p class="note">網點是用許多小點排成的淡色：點越小，顏色越淡。某個顏色想印得淡一點，但它和旁邊的顏色會分到同一支油墨時（例如臉和頭髮），可以把它印成網點。</p>
+<ul class="tips">
+  <li><b>選要印成網點的地方。</b>按下面的「在圖上選顏色」，再點一下圖上那一塊。只有點到的那一塊印成網點，其他同色的地方照樣印實色。</li>
+  <li><b>在清單裡調整。</b>點過之後，按鈕上方的清單會多出一列：可以選用哪支油墨、網點濃度（10% 到 90%），按 ✕ 就移除。</li>
+  <li><b>再選別的地方。</b>再按一次按鈕，點那一塊。顏色相近的同色另一塊，會用同一列的設定；顏色差很多時（例如比臉更淡的鐘面），會另外多一列，濃淡可以分開設。最多 8 列；滿了以後按鈕會收起來，移除一列就會再出現。</li>
+  <li><b>深的地方照樣印實色。</b>比網點色深的地方不受影響，所以把淺的部分印成網點，深的部分就會顯出來。例如範例的茶杯：杯身是網點，杯內是實色。</li>
+</ul>
         <ul class="screens" id="screens" aria-label="印成網點的顏色"></ul>
         <div><button class="btn" type="button" id="pickBtn" aria-pressed="false">在圖上選顏色</button></div>
         <label class="width">印刷寬度 <input type="number" id="printWidth" min="1" max="500" step="0.1" inputmode="decimal"> 公分</label>
-        <p class="note">印刷模擬裡的網點是示意：80 lpi，照這個寬度計算。下載的印版不先做網點，網點的地方是灰色，灰的深淺就是網點大小（50% 網點＝50% 灰）。請把印版交給製版廠用 RIP 加網，網點更細緻，也會照他們的機器補償網點擴大。</p>
+        <ul class="tips">
+  <li><b>印刷模擬的網點只是示意。</b>它用 80 lpi（每英吋 80 排點），大小依上面的印刷寬度計算。印刷寬度也會寫進印版檔和製版說明，請填實際要印的寬度。</li>
+  <li><b>下載的印版還沒有網點。</b>網點的地方是灰色，灰越深，網點越大（50% 灰＝50% 網點）。</li>
+  <li><b>請製版廠加網。</b>把印版交給製版廠，他們會用 RIP（製版廠用來把灰階做成網點的軟體）加上更細緻的網點，也會依自己的機器補償網點擴大（印刷時網點會暈開，變得比原本大）。</li>
+</ul>
       </div>
 
     </section>
@@ -172,7 +218,7 @@
       <p class="status" id="status" role="status" aria-live="polite">分色中…</p>
       <div class="viewer" id="viewer">
         <div class="viewbar">
-          <p class="note">按住圖片拖曳就能移動，兩張圖會一起動。印刷模擬是印版的實際大小。</p>
+          <p class="note">按住圖片拖曳（手機用手指滑動），兩張圖會一起移動。圖是用印版的像素大小顯示，沒有再縮小，方便檢查邊緣和細線。</p>
           <button class="btn" type="button" id="closeZoom">關閉放大</button>
         </div>
         <div class="compare" id="compare">
@@ -180,7 +226,7 @@
           <figure><figcaption>印刷模擬 <span id="proofSize"></span></figcaption><div class="frame" id="proofFrame"><canvas class="thumb" id="proofThumb" width="1" height="1"></canvas><canvas class="full" id="proofCanvas" width="1" height="1"></canvas></div></figure>
         </div>
       </div>
-      <p class="note" id="linesNote" hidden>紅線是分色時描出的邊界。線圍起來的每一塊，先整塊配一個印刷色，所以平塗的地方不會出現雜點；只有明顯不同的點（例如沒有邊線的陰影）才保留自己的顏色。紅線上的點各自找最接近的顏色，細線因此留得下來。</p>
+      <p class="note" id="linesNote" hidden>紅線是分色時描出的邊界。每個被紅線圍起來的色塊，整塊配一個印刷色，所以單色的地方不會出現雜點。例外是和色塊明顯不同的點（例如沒有邊線的陰影），它們保留自己的顏色。紅線上的點，各自找最接近的顏色，細線因此留得下來。</p>
       <p class="stats" id="stats"></p>
 
       <div>
@@ -192,42 +238,87 @@
         <h2>下載</h2>
         <p class="note" id="sizeNote">印版是原圖的 2 倍大。</p>
         <div><button class="btn primary" type="button" id="downloadBtn" disabled>下載印版和印刷模擬（ZIP）</button></div>
-        <p class="note">壓縮檔裡有四塊印版、一張印刷模擬，和一份給製版廠的「製版說明」。印版是灰階 TIFF：黑色是實地，灰色是網點（還沒加網），白色不上墨。整包交給製版廠，請他們用 RIP 加網；網點角度和尺寸都寫在製版說明裡。</p>
+        <p class="note">壓縮檔（ZIP）裡有四塊印版、一張印刷模擬，和一份給製版廠的「製版說明」文字檔。</p>
+<ul class="tips">
+  <li><b>印版是灰階的 TIFF 圖檔。</b>黑色是整塊上墨（實地），灰色是網點的淡色，白色不上墨。</li>
+  <li><b>灰色還不是網點。</b>要請製版廠用 RIP（把灰階做成網點的軟體）加網，把灰色變成網點。</li>
+  <li><b>整包交給製版廠。</b>每塊印版的網點角度，和印刷模擬用的 80 lpi，都寫在製版說明裡。</li>
+</ul>
       </div>
 
       <div id="prepare">
         <h2 style="margin-bottom:8px">準備您的圖</h2>
         <ul class="tips">
-          <li><b>只用色盤的顏色。</b>整張圖只用色盤裡的 16 種顏色：紙色、四個單色和 11 個疊印色。用 Illustrator、Photoshop 或 InDesign 的話，匯入信裡附的 Adobe 色票就好。</li>
-          <li><b>疊印的地方直接塗疊印色。</b>兩支油墨疊在一起的地方，直接用那一格的疊印色票，不要用半透明圖層或「色彩增值」疊出來：螢幕上疊出的顏色和真的印出來不一樣，可能被分到別的油墨。</li>
-          <li><b>用平塗。</b>每塊顏色填滿、邊緣清楚。漸層、陰影、筆刷紋理和半透明，會被併成最接近的一種顏色，印出來變成一塊一塊的。想讓某一塊淡一點，用第 4 步「網點」把它印成網點，不要在圖上調淡。</li>
-          <li><b>不印的地方留紙色。</b>留紙色或透明就好，不要塗白色：這裡的白色就是紙。</li>
-          <li><b>同一支油墨的兩塊不要直接相碰。</b>它們印出來會連成一塊（例如臉和頭髮都是 720 U）。中間留一條紙色細縫、讓其中一塊換一支油墨，或把淡的那一塊印成網點。外框線和底下的色塊同一支油墨時，線也會不見，一樣在線和色塊之間留一條紙色細縫。</li>
-          <li><b>存成 PNG。</b>JPG 的壓縮雜點會讓色塊邊緣不平順，細小的淡色部分（例如手指）也可能不見。</li>
+          <li><b>只用色盤的顏色。</b>整張圖只用色盤裡的 16 種顏色：紙色、四個單色，和 11 個疊印色（兩支以上的油墨疊在一起的顏色）。用 Illustrator、Photoshop 或 InDesign 的話，把信裡附的 Adobe 色票匯入，就能直接選這些顏色。</li>
+          <li><b>疊印的地方，直接塗疊印色。</b>兩支油墨疊在一起的地方，請直接用那一格的疊印色票。不要用半透明圖層，或「色彩增值」（讓上下兩層顏色疊成更深的混合模式）自己疊：螢幕上疊出的顏色，和真的印出來不一樣，可能被分到別的油墨。</li>
+          <li><b>每一塊只塗一種顏色。</b>顏色要填滿，邊緣要清楚（這叫平塗）。漸層、陰影、筆刷紋理和半透明，會被併成最接近的一種顏色，印出來變成一塊一塊的。想讓某一塊淡一點，請用第 4 步的「網點」，不要在圖上調淡。</li>
+          <li><b>不印的地方留紙色。</b>留紙色或透明就好，不要另外塗白色。印版上的白色代表不上墨，露出來的就是紙。</li>
+          <li><b>同一支油墨的兩塊，不要直接相碰。</b>它們印出來會連成一塊，例如臉和頭髮都是 720 U。有三個辦法：中間留一條紙色的細縫；讓其中一塊換一支油墨；或把淡的那一塊印成網點。外框線和底下的色塊用同一支油墨時，線也會不見，一樣要在線和色塊之間留一條紙色的細縫。</li>
+          <li><b>存成 PNG。</b>JPG 為了縮小檔案，會在邊緣留下細小的雜點，色塊邊緣就不平順，細小的淡色部分（例如手指）也可能不見。</li>
         </ul>
       </div>
 
       <div>
         <h2 style="margin-bottom:8px">圖的大小怎麼影響分色</h2>
         <ul class="tips">
-          <li><b>照實際印刷尺寸，準備 600 dpi 的圖。</b>圖的寬度（像素）＝印刷寬度（英吋）× 600。例如明信片 14.8 × 10.5 公分，圖要 3496 × 2480 像素，就像這頁的範例。分色時圖會放大 2 倍，印版就有 1200 dpi，曲線最銳利。簡單的線稿能畫到 1200 dpi 更好，但很吃電腦效能，600 dpi 就夠了。分色後，上面「下載」會照您的圖算出可以印多大。</li>
-          <li><b>不要把小圖放大再用。</b>放大不會多出細節，只會把模糊和雜點一起放大，色塊的邊界變得不清楚，細節也會走樣；印版的邊緣也會有鋸齒，曲線變成一階一階的。圖不夠大，請從原檔用 600 dpi 重新輸出；AI 生成的圖，請選最高的解析度。</li>
-          <li><b>圖太大，會先縮小。</b>在電腦上，這個頁面最多處理大約 900 萬像素的圖，600 dpi 的明信片剛好，分色要半分鐘左右，也會用到大約 750 MB 的記憶體：電腦記憶體不多（4 GB 以下）時，請先關掉其他分頁，或改請 AI 助理 Claude Code 用工具包裡的「分色」技能幫您分色（<a href="#claude-code">怎麼用</a>）；在手機和平板上最多大約 400 萬像素（600 dpi 約 10 × 7 公分）。更大的圖會先自動縮小，很細的淡色線可能因此不見。要印更大、用原尺寸分色，請改用 AI 助理 Claude Code，請它用工具包裡的「分色」技能來分，它沒有這個限制（<a href="#claude-code">怎麼用</a>）。</li>
-          <li><b>細線要夠寬。</b>淺色的細線和小點至少畫 2 個像素寬，更細的會被當成雜點去掉。比旁邊深、寬度在 11 像素以內的細線會自動補回來，印成下一個較深的疊印色。</li>
+          <li><b>照實際印刷尺寸，準備 600 dpi 的圖。</b>dpi 是每英吋的像素數，數字越大越細。圖的寬度（像素）＝印刷寬度（英吋）× 600；1 英吋是 2.54 公分。例如明信片 14.8 × 10.5 公分，圖要 3496 × 2480 像素，這頁的範例就是這個大小。</li>
+<li><b>印版會有 1200 dpi。</b>分色時圖會放大 2 倍，所以 600 dpi 的圖會變成 1200 dpi 的印版，曲線最銳利。簡單的線稿能畫到 1200 dpi 更好，但很吃電腦效能，而且 1200 dpi 的明信片超過這個頁面能處理的大小，要改用 Claude Code 的分色技能；一般來說 600 dpi 就夠了。分色後，上面「下載」會照您的圖算出可以印多大。</li>
+          <li><b>不要把小圖放大再用。</b>放大不會多出細節，只會把模糊和雜點一起放大：色塊的邊界變得不清楚，細節走樣，印版的邊緣有鋸齒，曲線變成一階一階的。圖不夠大時，請從原檔用 600 dpi 重新輸出。AI 生成的圖，請選最高的解析度（像素最多的選項）。</li>
+          <li><b>圖太大，會先縮小。</b>在電腦上，這個頁面最多處理大約 900 萬像素的圖，600 dpi 的明信片剛好。在手機和平板上，最多大約 400 萬像素，600 dpi 約 10 × 7 公分。更大的圖會先自動縮小，很細的淡色線可能因此不見。</li>
+<li><b>電腦記憶體不多時，請先關掉其他分頁。</b>600 dpi 的明信片，分色要半分鐘左右，會用到大約 750 MB 的記憶體。電腦記憶體在 4 GB 以下時，請先關掉其他分頁，或改請 Claude Code（Anthropic 的 AI 助理）用工具包裡的「分色」技能幫您分色（<a href="#claude-code">怎麼用</a>）。</li>
+<li><b>要印更大，或要用原尺寸分色，請改用 Claude Code。</b>請它用工具包裡的「分色」技能來分，沒有這個大小限制（<a href="#claude-code">怎麼用</a>）。</li>
+          <li><b>細線要夠寬。</b>淺色的細線和小點，至少要畫 2 個像素寬；更細的會被當成雜點去掉。比旁邊顏色深的細線，寬度在 11 像素以內時，會自動補回來，印成下一個較深的疊印色。</li>
           <li><b>換了尺寸，請再檢查一次。</b>同一張圖換尺寸後，分色結果可能有些不同。例如一筆深色花瓣在小圖裡不到 11 像素寬，會當成細線印成較深的疊印色；圖放大後同一筆超過 11 像素，就會印成和旁邊一樣的顏色。換尺寸後，請按「放大檢查」對照原圖再看一次。</li>
         </ul>
       </div>
     </section>
   </main>
 
+  <section class="bench" id="tab-palette" role="tabpanel" aria-labelledby="tabbtn-palette" hidden>
+    <div class="ticket">
+      <div class="field">
+        <h2><span>1</span>從現成色盤開始</h2>
+        <div class="presets" id="genPresets" role="radiogroup" aria-label="現成色盤"></div>
+        <p class="note">請選最多四支油墨，右邊（手機在下方）會顯示它們疊在一起印出來的每一種顏色。可以從投票的四組色卡開始改，也可以自己輸入 Pantone 色號（油墨的色卡編號，U 代表未塗佈紙）。</p>
+      </div>
+      <div class="field">
+        <h2><span>2</span>油墨與印刷順序</h2>
+        <p class="note">清單最上面的先印，後印的蓋在上面。請輸入 Pantone 色號，例如 806 U。沒有色號的顏色，可以輸入 6 位數色碼，例如 #3A7BD5。</p>
+        <ol class="genlist" id="genInks" aria-label="油墨，照印刷順序"></ol>
+        <div><button class="btn" type="button" id="genAdd">加一支油墨（最多四支）</button></div>
+        <datalist id="pantone-u"></datalist>
+      </div>
+      <div class="field">
+        <h2><span>3</span>用這組色盤</h2>
+        <div><button class="btn primary" type="button" id="genUse">用這組色盤分色</button></div>
+        <p class="note" id="genUseNote"></p>
+        <div class="bar left"><button class="btn" type="button" id="genCopy">複製內容</button><button class="btn" type="button" id="genSave">下載 palette.json</button></div>
+        <p class="note">按「複製內容」，可以把色盤貼到「分色」分頁的「或貼上您的色盤」，也可以交給 Claude Code（Anthropic 的 AI 助理）的技能使用（<a href="#claude-code">說明</a>）。「下載 palette.json」是同一份色盤的檔案。</p>
+        <p class="note" id="genMsg" role="status"></p>
+      </div>
+    </div>
+    <div class="result">
+      <div class="gencard" id="genCard" role="group" aria-label="疊出來的顏色，照色卡的排法"></div>
+      <p class="geninfo" id="genInfo"></p>
+      <p class="note" id="genWarn" role="status"></p>
+      <p class="note">畫面上的顏色是依「印在特A啤酒紙上」模擬的，實際顏色以印刷打樣為準。這裡和網站上的「疊印色彩矩陣產生器」用同一套計算。</p>
+    </div>
+  </section>
+
   <footer>
-    <p style="margin:0" id="claude-code"><b>用 AI 助理 Claude Code 分色：</b>疊印工具包裡另有一個「分色」技能（skill），和這個頁面用同一套算法；我們用五張範例圖比對過，兩邊分出的印版每一點都相同。這個技能不是可以直接打開的程式，而是寫給 AI 助理看的工作步驟：要先在電腦上安裝 Anthropic 的 AI 助理 Claude Code，把工具包裡的技能資料夾放進 Claude Code 的 skills 資料夾（工具包的 README 有步驟），再用平常說話的方式請 Claude 幫您分色，例如「用 palette.json 幫我把 art.png 分色」。它沒有圖片大小的限制，也多了幾個進階選項。</p>
-    <p style="margin:0">原始碼：<a href="https://github.com/uthmod/overprint-kit" target="_blank" rel="noopener">github.com/uthmod/overprint-kit</a>（CC BY-NC 4.0）・<a href="https://teleportpress-letterpress-user-docu.vercel.app/#overprint-vote" target="_blank" rel="noopener">時分印刷 TeleportPress</a></p>
+    <p style="margin:0" id="claude-code"><b>用 Claude Code 分色：</b>Claude Code 是 Anthropic 的 AI 助理，您可以用平常說話的方式請它幫忙做事。疊印工具包裡另有一個「分色」技能（skill），就是寫給 AI 助理看的作業步驟，不是可以直接打開的程式。它和這個頁面用同一套算法，我們用五張範例圖比對過，兩邊分出的印版每一點都相同。它沒有圖片大小的限制，也多了幾個進階選項。</p>
+<ul class="tips">
+  <li><b>先安裝。</b>在電腦上安裝 Claude Code。</li>
+  <li><b>再放入技能。</b>把工具包裡的技能資料夾，放進 Claude Code 的 skills 資料夾（工具包的 README 有步驟）。</li>
+  <li><b>然後請它分色。</b>用平常說話的方式，例如對 Claude 說：「用 palette.json 幫我把 art.png 分色」（palette.json 是色盤檔，art.png 是您的圖）。</li>
+</ul>
+    <p style="margin:0">工具包的原始碼（程式碼）：<a href="https://github.com/uthmod/overprint-kit" target="_blank" rel="noopener">github.com/uthmod/overprint-kit</a>（授權：CC BY-NC 4.0，姓名標示－非商業性）・<a href="https://teleportpress-letterpress-user-docu.vercel.app/#overprint-vote" target="_blank" rel="noopener">時分印刷 TeleportPress</a></p>
   </footer>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="separate.js?v=17"></script><!-- bump ?v= whenever separate.js changes: a cached old copy breaks the new page -->
+<script src="overprint-model.js?v=1"></script><!-- the 疊印色彩矩陣產生器's model + Pantone U table (scripts/overprint-model-entry.js); bump ?v= on rebuild -->
+<script src="separate.js?v=18"></script><!-- bump ?v= whenever separate.js changes: a cached old copy breaks the new page -->
 <script>
 // This round's ballot sets as palette.json (fetched from the kit's palette link when the page was built), and the sample
 // (lossless WebP: a lossy copy's compression noise came out as rough edges and a lost hand).
@@ -300,7 +391,7 @@ function pastedPalette(text) {
   const i = PRESETS.findIndex((p) => p.inks.length === names.length && p.inks.every((k) => names.includes(norm(k.name))));
   if (i >= 0) return { preset: i };
   throw new Error(names.length
-    ? `${names.map((n) => n.replace(/([UC])$/, ' $1')).join('、')} 不是上面的現成色盤。請在疊印色彩矩陣產生器做好這組色盤，按「複製內容」，再整段貼到這裡。`
+    ? `${names.map((n) => n.replace(/([UC])$/, ' $1')).join('、')} 不在上面的選單裡。請到「色盤產生器」分頁或疊印色彩矩陣產生器做好這組色盤，按「複製內容」，再整段貼到這裡。`
     : '看不懂貼上的內容。請貼上疊印色彩矩陣產生器「複製內容」的文字，或四支油墨的名稱（例如 223 U、720 U、4163 U、2159 U）。');
 }
 $('paletteText').addEventListener('input', (e) => {
@@ -315,7 +406,7 @@ $('paletteText').addEventListener('input', (e) => {
     useCustom(got.json);
     paletteMsg(`已使用貼上的色盤${got.json.name ? `「${got.json.name}」` : ''}。`);
   } catch (err) {
-    paletteMsg(err instanceof SyntaxError ? '貼上的內容不完整。請在疊印色彩矩陣產生器按「複製內容」，再整段貼上。' : err.message, true);
+    paletteMsg(err instanceof SyntaxError ? '貼上的內容不完整。請在「色盤產生器」分頁或疊印色彩矩陣產生器按「複製內容」，再整段貼上。' : err.message, true);
   }
 });
 $('paletteInput').addEventListener('change', async (e) => {
@@ -327,7 +418,7 @@ $('paletteInput').addEventListener('change', async (e) => {
     useCustom(json);
     paletteMsg(`已使用檔案裡的色盤${json.name ? `「${json.name}」` : ''}。`);
   } catch (err) {
-    paletteMsg(err instanceof SyntaxError ? '這個檔案不是 palette.json。請用信裡或疊印色彩矩陣產生器下載的 palette.json。' : err.message, true);
+    paletteMsg(err instanceof SyntaxError ? '這個檔案不是色盤檔（palette.json）。請用信裡附的，或在「色盤產生器」分頁、疊印色彩矩陣產生器下載的 palette.json。' : err.message, true);
   }
 });
 
@@ -357,7 +448,7 @@ async function loadImage(src, name, stem) {
   pc.width = w; pc.height = h;
   pt.width = $('origThumb').width; pt.height = $('origThumb').height;
   $('proofSize').textContent = '';
-  imageMsg(k < 1 ? `${name}：原圖 ${w0} × ${h0} 像素太大，已自動縮小到 ${w} × ${h} 再分色。很細的淺色線可能會不見；要用原尺寸分色，可以請 AI 助理 Claude Code 用工具包裡的「分色」技能來分（見頁面最下方的說明）。` : name);
+  imageMsg(k < 1 ? `${name}：原圖 ${w0} × ${h0} 像素，超過這個頁面能處理的大小，已自動縮小到 ${w} × ${h} 再分色。很細的淺色線可能因此不見。要用原尺寸分色，請改用 Claude Code（Anthropic 的 AI 助理）和工具包裡的「分色」技能，作法見頁面最下方。` : name);
   $('origSize').textContent = `${w} × ${h}`;
   return k; // the shrink, so the sample's clicked points can follow it
 }
@@ -370,7 +461,7 @@ async function takeFile(file) {
     await loadImage(url, file.name, file.name.replace(/\.[^.]+$/, '') || 'image');
     state.screens = []; // picked from the old picture
     renderScreens();
-    if (file.type === 'image/jpeg') imageMsg(`${$('imageName').textContent}　這是 JPG：壓縮產生的雜點會讓色塊邊緣不平順，細小的淡色部分（例如手指）也可能不見。有原檔的話，存成 PNG 再上傳效果最好。`);
+    if (file.type === 'image/jpeg') imageMsg(`${$('imageName').textContent}　這是 JPG：JPG 為了縮小檔案，會在邊緣留下細小的雜點，色塊邊緣就不平順，細小的淡色部分（例如手指）也可能不見。有原檔的話，請存成 PNG 再選一次，效果最好。`);
     run();
   } catch (err) {
     imageMsg(`${file.name}：${err.message || '這張圖打不開。'}`, true);
@@ -488,10 +579,10 @@ function show(r) {
   const seen = new Uint8Array(64);
   for (let i = 0; i < r.idx.length; i++) seen[r.idx[i]] = 1;
   const used = seen.subarray(1, 16).reduce((a, v) => a + v, 0), dots = seen.subarray(16).reduce((a, v) => a + v, 0);
-  $('stats').textContent = `和最接近的印刷色平均差 ${r.de.toFixed(1)}（數字越小，印出來越像原圖）；用到 15 種油墨顏色中的 ${used} 種` +
-    (r.list.length ? `，${r.list.length} 個網點色有 ${dots} 個用上` : '') + `。花了 ${r.secs.toFixed(1)} 秒。`;
+  $('stats').textContent = `印出來的顏色和原圖平均相差 ${r.de.toFixed(1)}（數字越小，印出來越像原圖）。色盤有油墨的 15 種顏色，用到 ${used} 種` +
+    (r.list.length ? `。您設的 ${r.list.length} 個網點色，用上了 ${dots} 個` : '') + `。花了 ${r.secs.toFixed(1)} 秒。`;
   $('printWidth').value = state.widthCm || +cm(r.W, S.DPI);
-  $('sizeNote').textContent = `印版是原圖的 2 倍大（${r.W} × ${r.H} 像素）。印 ${cm(r.W, 1200)} × ${cm(r.H, 1200)} 公分以內，印版有 1200 dpi，曲線最銳利（這時圖是 600 dpi）；印到 ${cm(r.W, 600)} × ${cm(r.H, 600)} 公分，印版只有 600 dpi，曲線會比較粗。`;
+  $('sizeNote').textContent = `印版是原圖的 2 倍大（${r.W} × ${r.H} 像素）。dpi 是每英吋的像素數，數字越大越細。印 ${cm(r.W, 1200)} × ${cm(r.H, 1200)} 公分以內，印版有 1200 dpi，曲線最銳利（這時原圖是 600 dpi）。印到 ${cm(r.W, 600)} × ${cm(r.H, 600)} 公分，印版只有 600 dpi，曲線會比較粗。`;
   setStatus('分色完成。');
 }
 
@@ -557,7 +648,7 @@ function setPicking(on) {
   state.picking = on;
   $('pickBtn').setAttribute('aria-pressed', String(on));
   document.body.classList.toggle('picking', on);
-  setStatus(on ? '點一下原圖或印刷模擬上，要印成網點的那一塊（按 Esc 取消）。' : state.result ? '分色完成。' : '');
+  setStatus(on ? '請在原圖或印刷模擬上，點一下要印成網點的那一塊（再按一次按鈕，或按 Esc，可以取消）。' : state.result ? '分色完成。' : '');
 }
 $('pickBtn').addEventListener('click', () => setPicking(!state.picking));
 /** The picture's colour under the pointer (a 3×3 average), added as a screened colour and separated again. */
@@ -665,17 +756,7 @@ $('downloadBtn').addEventListener('click', async () => {
     zip.file(`${state.stem}-製版說明.txt`, S.plateNote(p.inks, grays, r.W, r.H, r.dpi));
     zip.file(`${state.stem}-proof.png`, await toBlob($('proofCanvas')));
     const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
-    const filename = `${state.stem}-分色.zip`;
-    const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : undefined;
-    if (dl) {
-      await dl.save({ filename, data: blob });
-    } else if (dl === null) {
-      throw new Error('這個檢視方式不能下載檔案，請換一個瀏覽器打開這個頁面。');
-    } else {
-      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: filename });
-      document.body.append(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-    }
+    await saveFile(`${state.stem}-分色.zip`, blob);
     setStatus('已下載壓縮檔。');
   } catch (err) {
     setStatus(err && err.code === 'declined' ? '沒有下載。' : '下載失敗：' + ((err && err.message) || err), err && err.code !== 'declined');
@@ -683,6 +764,164 @@ $('downloadBtn').addEventListener('click', async () => {
     $('downloadBtn').disabled = !state.result;
   }
 });
+
+/** Save a file: the artifact's download permission inside claude.ai, a plain link elsewhere. */
+async function saveFile(filename, blob) {
+  const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : undefined;
+  if (dl) return dl.save({ filename, data: blob });
+  if (dl === null) throw new Error('這個檢視方式不能下載檔案，請換一個瀏覽器打開這個頁面。');
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: filename });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+// ---------- tabs ----------
+function showTab(name) {
+  for (const t of ['separate', 'palette']) {
+    const on = t === name;
+    $(`tabbtn-${t}`).setAttribute('aria-selected', String(on));
+    $(`tabbtn-${t}`).tabIndex = on ? 0 : -1;
+    $(`tab-${t}`).hidden = !on;
+  }
+}
+$('tabbtn-separate').addEventListener('click', () => showTab('separate'));
+$('tabbtn-palette').addEventListener('click', () => showTab('palette'));
+document.querySelector('.tabs').addEventListener('keydown', (e) => { // arrow keys move between the two tabs
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  const next = $('tabbtn-separate').getAttribute('aria-selected') === 'true' ? 'palette' : 'separate';
+  showTab(next); $(`tabbtn-${next}`).focus();
+});
+
+// ---------- 色盤產生器: the 疊印色彩矩陣產生器's own model (overprint-model.js), then 分色 with the result ----------
+const M = window.OverprintModel;
+const BOOK = new Map([...M.parsePantoneCsv(M.PANTONE_CSV), ...M.CUSTOM_INKS].map((i) => [i.name, i]));
+const gen = { inks: [], preset: null, extra: new Map() };
+const genBook = () => new Map([...BOOK, ...gen.extra]);
+const presetInks = (i) => PRESETS[i].inks.map((k, j) => ({ name: k.name, print: j + 1, alpha: k.opacity }));
+const genHex = (name) => { const i = genBook().get(name); return M.toHex(M.labToRgb(i ? [i.L, i.a, i.b] : [90, 0, 0])); };
+const genEdit = (f) => { gen.preset = null; gen.inks = f(gen.inks).map((i, k) => ({ ...i, print: k + 1 })); renderGen(); };
+const node = (tag, props, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
+/** "806" / "806U" / "806 u" → 806 U; "#aabbcc" / "aabbcc" → that colour as an ink named by its hex. */
+function genResolve(text) {
+  const t = text.trim(), key = t.toLowerCase().replace(/\s+/g, '');
+  if (!t) return { error: '請輸入色號。' };
+  for (const n of BOOK.keys()) {
+    const k = n.toLowerCase().replace(/\s+/g, '');
+    if (k === key || k === `${key}u`) return { ink: BOOK.get(n) };
+  }
+  const hex = t.replace(/^#?/, '#').toUpperCase();
+  if (/^#[0-9A-F]{6}$/.test(hex)) { const [L, a, b] = M.rgbToLab(M.hexToRgb(hex)); return { ink: { name: hex, L, a, b, flag: '' } }; }
+  return { error: `找不到「${t}」。請輸入 Pantone U 色號（例如 806 U），或 6 位數色碼（例如 #3A7BD5）。` };
+}
+function genSetInk(k, ink) {
+  if (!BOOK.has(ink.name)) gen.extra.set(ink.name, ink);
+  genEdit((l) => l.map((x, j) => (j === k ? { ...x, name: ink.name, alpha: M.defaultAlpha(ink) } : x)));
+}
+function renderGen() {
+  $('genPresets').replaceChildren(...PRESETS.map((p, i) => {
+    const b = node('button', { type: 'button', className: 'preset' + (gen.preset === i ? ' on' : '') },
+      node('span', { className: 'dots' }, ...p.inks.map((k) => { const d = node('span', {}); d.style.background = '#' + k.hex; return d; })), p.name);
+    b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(gen.preset === i));
+    b.addEventListener('click', () => { gen.preset = i; gen.inks = presetInks(i); renderGen(); });
+    return b;
+  }));
+  const n = gen.inks.length;
+  $('genInks').replaceChildren(...gen.inks.map((ink, k) => {
+    const chip = node('span', { className: 'chip' }); chip.style.background = genHex(ink.name);
+    const input = node('input', { type: 'text', value: ink.name, placeholder: '色號或色碼', autocomplete: 'off', spellcheck: false });
+    input.setAttribute('list', 'pantone-u'); input.setAttribute('aria-label', `第 ${k + 1} 支油墨（第 ${k + 1} 個印）`);
+    const msg = node('p', { className: 'note' });
+    const commit = () => {
+      if (input.value.trim() === ink.name) return;
+      const r = genResolve(input.value);
+      if (r.error) { msg.textContent = r.error; msg.classList.add('err'); } else genSetInk(k, r.ink);
+    };
+    input.addEventListener('change', commit);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') commit(); });
+    const cur = genBook().get(ink.name);
+    if (ink.name.startsWith('#') && cur) { // a colour with no ink number: offer the nearest Pantone U
+      const near = M.nearestInk([cur.L, cur.a, cur.b], BOOK);
+      if (near) {
+        const use = node('button', { type: 'button', className: 'btn link', textContent: near.name });
+        use.addEventListener('click', () => genSetInk(k, near));
+        msg.append('這是色碼，不是油墨色號。最接近的色號是 ', use, '。');
+      }
+    }
+    const icon = (label, text, off, f) => {
+      const b = node('button', { type: 'button', className: 'btn icon', textContent: text, disabled: off, title: label });
+      b.setAttribute('aria-label', label); b.addEventListener('click', f); return b;
+    };
+    return node('li', { className: 'genink' }, node('span', { className: 'num', textContent: String(k + 1) }), chip, input,
+      icon('往前（早一點印）', '↑', k === 0, () => genEdit((l) => { const c = [...l]; [c[k - 1], c[k]] = [c[k], c[k - 1]]; return c; })),
+      icon('往後（晚一點印）', '↓', k === n - 1, () => genEdit((l) => { const c = [...l]; [c[k + 1], c[k]] = [c[k], c[k + 1]]; return c; })),
+      icon('移除這支油墨', '×', n === 1, () => genEdit((l) => l.filter((_, j) => j !== k))), msg);
+  }));
+  $('genAdd').hidden = n >= 4;
+  const ready = n > 0 && gen.inks.every((i) => genBook().has(i.name));
+  const cells = ready ? M.simulate({ inks: gen.inks, paper: M.STOCK, trapping: M.DEFAULT_TRAPPING, book: genBook() }) : [];
+  const flat = cells.flat();
+  let best = { a: -1, b: -1, de: Infinity };
+  flat.forEach((c, x) => flat.forEach((d, y) => { if (y > x) { const de = M.deltaE00(c.lab, d.lab); if (de < best.de) best = { a: x, b: y, de }; } }));
+  const close = best.de < M.MODEL_ERROR_DE;
+  const label = (c) => c.inks.map((i) => i + 1).join('+');
+  const names = (c) => c.inks.map((i) => gen.inks[i].name).join(' 疊 ');
+  let x = 0;
+  $('genCard').style.background = M.toHex(M.labToRgb(M.STOCK));
+  $('genCard').replaceChildren(...cells.map((row) => {
+    const r = node('div', { className: 'genrow' });
+    r.style.gridTemplateColumns = `repeat(${row.length}, minmax(0, 1fr))`;
+    r.append(...row.map((c) => {
+      const i = x++, warn = close && (i === best.a || i === best.b);
+      const b = node('button', { type: 'button', className: 'gencell' + (warn ? ' warn' : ''), textContent: label(c) + (warn ? ' ≈' : '') });
+      b.style.background = M.toHex(c.rgb); b.style.color = c.lab[0] < 55 ? '#fff' : '#1c1917';
+      b.setAttribute('aria-label', `${names(c)}，${M.toHex(c.rgb).toUpperCase()}`);
+      const show = () => { $('genInfo').textContent = `${label(c)}　${names(c)}　${M.toHex(c.rgb).toUpperCase()}`; };
+      b.addEventListener('mouseenter', show); b.addEventListener('focus', show); b.addEventListener('click', show);
+      return b;
+    }));
+    return r;
+  }));
+  $('genInfo').textContent = ready ? '把滑鼠移到格子上（手機請點一下），看是哪幾支油墨疊出來的。' : '每一支油墨都填好色號後，這裡會出現疊出來的顏色。';
+  $('genWarn').textContent = !flat.length ? '' : close
+    ? `有兩格太接近：「${label(flat[best.a])}」和「${label(flat[best.b])}」色差只有 ${best.de.toFixed(1)}，印出來可能分不出來。換一支油墨或調換順序試試。`
+    : flat.length > 1 ? `每一格都分得出來：最接近的兩格色差 ${best.de.toFixed(1)}（低於 ${M.MODEL_ERROR_DE} 才會提醒）。` : '';
+  $('genWarn').classList.toggle('err', close);
+  const four = ready && n === 4;
+  $('genUse').disabled = !four; $('genCopy').disabled = !ready; $('genSave').disabled = !ready;
+  $('genUseNote').textContent = four ? '' : '分色要剛好四支油墨，每一支都要有色號。';
+}
+const genJson = () => M.paletteJson(gen.preset !== null ? PRESETS[gen.preset].name : '色盤產生器', gen.inks, genBook());
+$('genAdd').addEventListener('click', () => genEdit((l) => (l.length >= 4 ? l : [...l, { name: '', print: l.length + 1, alpha: 0 }])));
+$('genUse').addEventListener('click', () => {
+  if (gen.preset !== null) { $('paletteSelect').value = String(gen.preset); usePalette(PRESETS[gen.preset]); }
+  else useCustom(genJson());
+  paletteMsg('已使用色盤產生器做的色盤。');
+  showTab('separate');
+  $('tab-separate').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+$('genCopy').addEventListener('click', async () => {
+  const text = JSON.stringify(genJson(), null, 2);
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch { // some embedded views block the clipboard API
+    const t = node('textarea', { value: text }); t.style.cssText = 'position:fixed;opacity:0'; document.body.append(t); t.select();
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    t.remove();
+  }
+  $('genMsg').textContent = ok ? '已複製。' : '這個瀏覽器不能自動複製。請改按「用這組色盤分色」或「下載 palette.json」。';
+  $('genMsg').classList.toggle('err', !ok);
+});
+$('genSave').addEventListener('click', async () => {
+  try {
+    await saveFile('palette.json', new Blob([JSON.stringify(genJson(), null, 2)], { type: 'application/json' }));
+    $('genMsg').textContent = '已下載 palette.json。'; $('genMsg').classList.remove('err');
+  } catch (err) {
+    $('genMsg').textContent = err && err.code === 'declined' ? '沒有下載。' : '下載失敗：' + ((err && err.message) || err);
+    $('genMsg').classList.toggle('err', !(err && err.code === 'declined'));
+  }
+});
+$('pantone-u').replaceChildren(...[...BOOK.keys()].map((v) => node('option', { value: v })));
+gen.preset = SAMPLE.palette; gen.inks = presetInks(SAMPLE.palette);
+renderGen();
 
 // ---------- start: the sample, separated, so the page opens showing what it does ----------
 if (window.claude && window.claude.use) {

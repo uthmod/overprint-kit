@@ -35,13 +35,13 @@
   /** A palette.json (from 疊印色盤, the matrix page, or the kit email) → names + the 16 printable colours by ink mask.
    *  masks/pcts: each colour's ink mask and screen (0 = solid); withScreens adds screened colours after the 16. */
   function parsePalette(p) {
-    if (!p || !Array.isArray(p.inks) || !Array.isArray(p.cells)) throw new Error('這不是 palette.json：找不到 inks 和 cells');
-    if (p.inks.length !== 4 || p.cells.length !== 16) throw new Error(`分色需要 4 支墨的色盤（這個有 ${p.inks.length} 支）`);
+    if (!p || !Array.isArray(p.inks) || !Array.isArray(p.cells)) throw new Error('這不是正確的色盤檔（palette.json）。請用疊印色彩矩陣產生器或「色盤產生器」分頁下載的檔案。（找不到 inks 和 cells）');
+    if (p.inks.length !== 4 || p.cells.length !== 16) throw new Error(`分色需要四支油墨的色盤，這個色盤有 ${p.inks.length} 支。`);
     const rgb = new Float64Array(48), lab = new Float64Array(48);
     const field = (x, k) => (x && typeof x === 'object' ? x[k] : x); // older palette.json files: plain "E1E3E0" and "720U"
     p.cells.forEach((c, m) => {
       const hex = String(field(c, 'hex')).replace('#', '');
-      if (!/^[0-9a-f]{6}$/i.test(hex)) throw new Error(`palette.json 第 ${m + 1} 格的色碼看不懂：${field(c, 'hex')}`);
+      if (!/^[0-9a-f]{6}$/i.test(hex)) throw new Error(`色盤檔（palette.json）第 ${m + 1} 格的色碼無法辨認：${field(c, 'hex')}。請重新下載一份色盤檔。`);
       for (let k = 0; k < 3; k++) rgb[m * 3 + k] = parseInt(hex.slice(2 * k, 2 * k + 2), 16);
       labF(rgb[m * 3], rgb[m * 3 + 1], rgb[m * 3 + 2], lab, m * 3);
     });
@@ -465,7 +465,7 @@
     const P = { lab: palette.lab, cost }, P16 = { lab: palette.lab, cost: cost.subarray(0, 16) };
     const stage = async (s) => { if (o.onStage) await o.onStage(s); await pause(); };
     const W = w * SCALE, H = h * SCALE;
-    await stage('放大 3 倍');
+    await stage(`放大 ${SCALE} 倍`);
     const img = upscale(rgb, w, h, W, H);
     await stage('描出色塊');
     const { notLine, shape, count } = trace(rgb, w, h);
