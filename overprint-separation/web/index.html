@@ -100,7 +100,7 @@
   code { font-family: var(--mono); font-size: 15px; background: var(--tint); padding: 0 5px; }
   .tips { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
   footer { margin-top: 48px; border-top: 1px solid var(--rule); padding-top: 16px; color: var(--muted); display: grid; gap: 4px; }
-  footer a, .lead a, .note a { color: var(--gold); }
+  footer a, .lead a, .note a, .tips a { color: var(--gold); }
   @media (prefers-reduced-motion: no-preference) { .btn { transition: background-color 0.15s ease-out; } }
 </style>
 
@@ -205,7 +205,7 @@
         <ul class="tips">
           <li><b>照實際印刷尺寸，準備 600 dpi 的圖。</b>圖的寬度（像素）＝印刷寬度（英吋）× 600。例如明信片 14.8 × 10.5 公分，圖要 3496 × 2480 像素，就像這頁的範例。分色時圖會放大 2 倍，印版就有 1200 dpi，曲線最銳利。簡單的線稿能畫到 1200 dpi 更好，但很吃電腦效能，600 dpi 就夠了。分色後，上面「下載」會照您的圖算出可以印多大。</li>
           <li><b>不要把小圖放大再用。</b>放大不會多出細節，只會把模糊和雜點一起放大，色塊的邊界變得不清楚，細節也會走樣；印版的邊緣也會有鋸齒，曲線變成一階一階的。圖不夠大，請從原檔用 600 dpi 重新輸出；AI 生成的圖，請選最高的解析度。</li>
-          <li><b>圖太大，會先縮小。</b>在電腦上，這個頁面最多處理大約 900 萬像素的圖，600 dpi 的明信片剛好，分色要半分鐘左右，也會用到大約 750 MB 的記憶體：電腦記憶體不多（4 GB 以下）時，請先關掉其他分頁，或改用工具包裡 Claude Code 版的「分色」；在手機和平板上最多大約 400 萬像素（600 dpi 約 10 × 7 公分）。更大的圖會先自動縮小，很細的淡色線可能因此不見。要印更大、用原尺寸分色，請用工具包裡 Claude Code 版的「分色」，它沒有這個限制。</li>
+          <li><b>圖太大，會先縮小。</b>在電腦上，這個頁面最多處理大約 900 萬像素的圖，600 dpi 的明信片剛好，分色要半分鐘左右，也會用到大約 750 MB 的記憶體：電腦記憶體不多（4 GB 以下）時，請先關掉其他分頁，或改請 AI 助理 Claude Code 用工具包裡的「分色」技能幫您分色（<a href="#claude-code">怎麼用</a>）；在手機和平板上最多大約 400 萬像素（600 dpi 約 10 × 7 公分）。更大的圖會先自動縮小，很細的淡色線可能因此不見。要印更大、用原尺寸分色，請改用 AI 助理 Claude Code，請它用工具包裡的「分色」技能來分，它沒有這個限制（<a href="#claude-code">怎麼用</a>）。</li>
           <li><b>細線要夠寬。</b>淺色的細線和小點至少畫 2 個像素寬，更細的會被當成雜點去掉。比旁邊深、寬度在 11 像素以內的細線會自動補回來，印成下一個較深的疊印色。</li>
           <li><b>換了尺寸，請再檢查一次。</b>同一張圖換尺寸後，分色結果可能有些不同。例如一筆深色花瓣在小圖裡不到 11 像素寬，會當成細線印成較深的疊印色；圖放大後同一筆超過 11 像素，就會印成和旁邊一樣的顏色。換尺寸後，請按「放大檢查」對照原圖再看一次。</li>
         </ul>
@@ -214,7 +214,7 @@
   </main>
 
   <footer>
-    <p style="margin:0">這個頁面和疊印工具包裡 Claude Code 版的「分色」用同一套算法；我們用五張範例圖比對過，兩邊分出的印版每一點都相同。</p>
+    <p style="margin:0" id="claude-code"><b>用 AI 助理 Claude Code 分色：</b>疊印工具包裡另有一個「分色」技能（skill），和這個頁面用同一套算法；我們用五張範例圖比對過，兩邊分出的印版每一點都相同。這個技能不是可以直接打開的程式，而是寫給 AI 助理看的工作步驟：要先在電腦上安裝 Anthropic 的 AI 助理 Claude Code，把工具包裡的技能資料夾放進 Claude Code 的 skills 資料夾（工具包的 README 有步驟），再用平常說話的方式請 Claude 幫您分色，例如「用 palette.json 幫我把 art.png 分色」。它沒有圖片大小的限制，也多了幾個進階選項。</p>
     <p style="margin:0">原始碼：<a href="https://github.com/uthmod/overprint-kit" target="_blank" rel="noopener">github.com/uthmod/overprint-kit</a>（CC BY-NC 4.0）・<a href="https://teleportpress-letterpress-user-docu.vercel.app/#overprint-vote" target="_blank" rel="noopener">時分印刷 TeleportPress</a></p>
   </footer>
 </div>
@@ -315,7 +315,7 @@ async function loadImage(src, name, stem) {
   pc.width = w; pc.height = h;
   pt.width = $('origThumb').width; pt.height = $('origThumb').height;
   $('proofSize').textContent = '';
-  imageMsg(k < 1 ? `${name}：原圖 ${w0} × ${h0} 像素太大，已自動縮小到 ${w} × ${h} 再分色。很細的淺色線可能會不見；要用原尺寸分色，請用工具包裡 Claude Code 版的分色。` : name);
+  imageMsg(k < 1 ? `${name}：原圖 ${w0} × ${h0} 像素太大，已自動縮小到 ${w} × ${h} 再分色。很細的淺色線可能會不見；要用原尺寸分色，可以請 AI 助理 Claude Code 用工具包裡的「分色」技能來分（見頁面最下方的說明）。` : name);
   $('origSize').textContent = `${w} × ${h}`;
   return k; // the shrink, so the sample's clicked points can follow it
 }
