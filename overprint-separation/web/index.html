@@ -141,6 +141,14 @@
   .fitlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
   .fitcard { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--rule); background: var(--sheet); }
   .fitcard h3 { font: 700 16px/1.4 var(--body); }
+  /* 說明: each tool's long help folds away (same words, shown on request), so the controls and the result sit closer together */
+  .help summary { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; cursor: pointer; color: var(--gold); font-weight: 600; list-style: none; }
+  .help summary::-webkit-details-marker { display: none; }
+  .help summary::before { content: "▸"; }
+  .help[open] summary::before { content: "▾"; }
+  .help summary:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .helpbody { display: grid; gap: 10px; }
+  #screens { max-width: 560px; } /* 網點 sits in the wide result column: keep its rows ticket-width */
   @media (prefers-reduced-motion: no-preference) { .btn { transition: background-color 0.15s ease-out; } }
 </style>
 
@@ -166,9 +174,11 @@
             <button class="btn" type="button" tabindex="-1" aria-hidden="true">選一張圖</button>
             <input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif,image/bmp" aria-label="選一張圖（PNG、JPG 或 WebP）">
           </div>
-          <p class="note">請選 PNG、JPG 或 WebP 的圖，也可以直接把圖拖到這個頁面上。透明的地方會當作紙色。太大的圖會自動縮小。怎麼準備圖、圖要多大，請看頁面下方的<a href="#prepare">「準備您的圖」</a>和「圖的大小怎麼影響分色」。</p>
           <p class="note" id="imageName" role="status"></p>
         </div>
+        <details class="help"><summary>說明</summary><div class="helpbody">
+          <p class="note">請選 PNG、JPG 或 WebP 的圖，也可以直接把圖拖到這個頁面上。透明的地方會當作紙色。太大的圖會自動縮小。怎麼準備圖、圖要多大，請看頁面下方的<a href="#prepare">「準備您的圖」</a>和「圖的大小怎麼影響分色」。</p>
+        </div></details>
       </div>
 
       <div class="field">
@@ -176,7 +186,6 @@
         <select id="paletteSelect" aria-label="選色盤"></select>
         <label class="paste" for="paletteText">或貼上您的色盤</label>
         <textarea id="paletteText" rows="3" placeholder="例如：223 U、720 U、4163 U、2159 U" aria-describedby="paletteHelp"></textarea>
-        <p class="note" id="paletteHelp">投票選的色盤，請直接從上面的選單選。也可以貼上信裡那四支油墨的名稱，例如 223 U（Pantone 色號，U 代表未塗佈紙）。自己搭配的色盤，請到上方的「色盤產生器」分頁做好，再按「用這組色盤分色」。在疊印色彩矩陣產生器做好的色盤，按「複製內容」，再整段貼到這裡。</p>
         <p class="note" id="paletteMsg" role="status"></p>
         <div class="file">
           <button class="btn link" type="button" tabindex="-1" aria-hidden="true">也可以選色盤檔案（palette.json）</button>
@@ -184,11 +193,14 @@
         </div>
         <ol class="inks" id="inks" aria-label="四支油墨，照印刷順序"></ol>
         <div class="strip" id="strip" aria-hidden="true"></div>
-        <p class="note">上面的清單是四支油墨，照印刷順序排，先印的在前面。清單下的小方格，是這組色盤的 16 種顏色：紙色、四個單色，和 11 個疊印色。</p>
         <div><button class="btn" type="button" id="fitBtn" disabled>從這張圖找色盤</button></div>
-        <p class="note">適合用幾種平塗顏色畫的圖。頁面會從大約 2,000 支 Pantone U 油墨裡，找出四支油墨和印刷順序，讓油墨本身和疊印出來的顏色，最接近您圖上的顏色。要等幾秒鐘。</p>
         <p class="note" id="fitMsg" role="status"></p>
         <ol class="fitlist" id="fitList" aria-label="從這張圖找到的色盤，最接近的在最前面"></ol>
+        <details class="help"><summary>說明</summary><div class="helpbody">
+          <p class="note" id="paletteHelp">投票選的色盤，請直接從上面的選單選。也可以貼上信裡那四支油墨的名稱，例如 223 U（Pantone 色號，U 代表未塗佈紙）。自己搭配的色盤，請到上方的「色盤產生器」分頁做好，再按「用這組色盤分色」。在疊印色彩矩陣產生器做好的色盤，按「複製內容」，再整段貼到這裡。</p>
+          <p class="note">上面的清單是四支油墨，照印刷順序排，先印的在前面。清單下的小方格，是這組色盤的 16 種顏色：紙色、四個單色，和 11 個疊印色。</p>
+          <p class="note">「從這張圖找色盤」適合用幾種平塗顏色畫的圖。頁面會從大約 2,000 支 Pantone U 油墨裡，找出四支油墨和印刷順序，讓油墨本身和疊印出來的顏色，最接近您圖上的顏色。要等幾秒鐘。</p>
+        </div></details>
       </div>
 
       <div class="field">
@@ -197,25 +209,6 @@
           <label><input type="radio" name="penalty" value="5" id="penalty5" checked><span><b>保留細節</b><small>花瓣、衣服皺摺這類深淺層次，盡量用疊印色留下來。大部分的圖選這個。</small></span></label>
           <label><input type="radio" name="penalty" value="8" id="penalty8"><span><b>簡潔色塊</b><small>偏淡、混濁的顏色，改用單一油墨印，少用疊印色。想要乾淨的大色塊時，選這個。</small></span></label>
         </div>
-      </div>
-
-      <div class="field">
-        <h2><span>4</span>網點（選用）</h2>
-        <p class="note">網點是用許多小點排成的淡色：點越小，顏色越淡。某個顏色想印得淡一點，但它和旁邊的顏色會分到同一支油墨時（例如臉和頭髮），可以把它印成網點。</p>
-<ul class="tips">
-  <li><b>選要印成網點的地方。</b>按下面的「在圖上選顏色」，再點一下圖上那一塊。只有點到的那一塊印成網點，其他同色的地方照樣印實色。</li>
-  <li><b>在清單裡調整。</b>點過之後，按鈕上方的清單會多出一列：可以選用哪支油墨、網點濃度（10% 到 90%），按 ✕ 就移除。</li>
-  <li><b>再選別的地方。</b>再按一次按鈕，點那一塊。顏色相近的同色另一塊，會用同一列的設定；顏色差很多時（例如比臉更淡的鐘面），會另外多一列，濃淡可以分開設。最多 8 列；滿了以後按鈕會收起來，移除一列就會再出現。</li>
-  <li><b>深的地方照樣印實色。</b>比網點色深的地方不受影響，所以把淺的部分印成網點，深的部分就會顯出來。例如範例的茶杯：杯身是網點，杯內是實色。</li>
-</ul>
-        <ul class="screens" id="screens" aria-label="印成網點的顏色"></ul>
-        <div><button class="btn" type="button" id="pickBtn" aria-pressed="false">在圖上選顏色</button></div>
-        <label class="width">印刷寬度 <input type="number" id="printWidth" min="1" max="500" step="0.1" inputmode="decimal"> 公分</label>
-        <ul class="tips">
-  <li><b>印刷模擬的網點只是示意。</b>它用 80 lpi（每英吋 80 排點），大小依上面的印刷寬度計算。印刷寬度也會寫進印版檔和製版說明，請填實際要印的寬度。</li>
-  <li><b>下載的印版還沒有網點。</b>網點的地方是灰色，灰越深，網點越大（50% 灰＝50% 網點）。</li>
-  <li><b>請製版廠加網。</b>把印版交給製版廠，他們會用 RIP（製版廠用來把灰階做成網點的軟體）加上更細緻的網點，也會依自己的機器補償網點擴大（印刷時網點會暈開，變得比原本大）。</li>
-</ul>
       </div>
 
     </section>
@@ -238,6 +231,26 @@
         </div>
       </div>
       <p class="note" id="linesNote" hidden>紅線是分色時描出的邊界。每個被紅線圍起來的色塊，整塊配一個印刷色，所以單色的地方不會出現雜點。例外是和色塊明顯不同的點（例如沒有邊線的陰影），它們保留自己的顏色。紅線上的點，各自找最接近的顏色，細線因此留得下來。</p>
+      <div class="field">
+        <h2><span>4</span>網點（選用）</h2>
+        <ul class="screens" id="screens" aria-label="印成網點的顏色"></ul>
+        <div><button class="btn" type="button" id="pickBtn" aria-pressed="false">在圖上選顏色</button></div>
+        <label class="width">印刷寬度 <input type="number" id="printWidth" min="1" max="500" step="0.1" inputmode="decimal"> 公分</label>
+        <details class="help"><summary>說明</summary><div class="helpbody">
+        <p class="note">網點是用許多小點排成的淡色：點越小，顏色越淡。某個顏色想印得淡一點，但它和旁邊的顏色會分到同一支油墨時（例如臉和頭髮），可以把它印成網點。</p>
+<ul class="tips">
+  <li><b>選要印成網點的地方。</b>按上面的「在圖上選顏色」，再點一下圖上那一塊。只有點到的那一塊印成網點，其他同色的地方照樣印實色。</li>
+  <li><b>在清單裡調整。</b>點過之後，按鈕上方的清單會多出一列：可以選用哪支油墨、網點濃度（10% 到 90%），按 ✕ 就移除。</li>
+  <li><b>再選別的地方。</b>再按一次按鈕，點那一塊。顏色相近的同色另一塊，會用同一列的設定；顏色差很多時（例如比臉更淡的鐘面），會另外多一列，濃淡可以分開設。最多 8 列；滿了以後按鈕會收起來，移除一列就會再出現。</li>
+  <li><b>深的地方照樣印實色。</b>比網點色深的地方不受影響，所以把淺的部分印成網點，深的部分就會顯出來。例如範例的茶杯：杯身是網點，杯內是實色。</li>
+</ul>
+        <ul class="tips">
+  <li><b>印刷模擬的網點只是示意。</b>它用 80 lpi（每英吋 80 排點），大小依上面的印刷寬度計算。印刷寬度也會寫進印版檔和製版說明，請填實際要印的寬度。</li>
+  <li><b>下載的印版還沒有網點。</b>網點的地方是灰色，灰越深，網點越大（50% 灰＝50% 網點）。</li>
+  <li><b>請製版廠加網。</b>把印版交給製版廠，他們會用 RIP（製版廠用來把灰階做成網點的軟體）加上更細緻的網點，也會依自己的機器補償網點擴大（印刷時網點會暈開，變得比原本大）。</li>
+</ul>
+        </div></details>
+      </div>
       <p class="stats" id="stats"></p>
 
       <div>
