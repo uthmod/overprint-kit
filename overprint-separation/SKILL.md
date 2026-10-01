@@ -15,7 +15,9 @@ Input: an image plus a four-ink `palette.json` (from 疊印色盤, the matrix pa
 ## Steps
 
 1. `python separate.py <image.png> <palette.json> [--penalty 6]` — about 10 s. Writes next to the image:
-   `<name>-plate1..4-<ink>.png` (black = ink, in print order), `<name>-proof.png` (the plates recombined in the palette's colours),
+   `<name>-plate1..4-<ink>.png` (greyscale, in print order: black = solid ink, grey = a screened area at its tint for the
+   plate-maker's RIP, white = no ink), `<name>-proof.png` (the inks recombined in the palette's colours, screens shown as dots),
+   `<name>-製版說明.txt` (for the plate-maker: what the greys mean, size and dpi, each plate's angle and tints),
    `<name>-sheet.png` (original | proof over the four plates) and `<name>-lines.png` (the shape outlines it traced).
    It prints the mean ΔE to the printable colours, each ink's coverage, and how many of the 15 ink colours appear.
 2. **Check before reporting.** Make zoomed original-vs-proof crops (2× on a busy area) and read them; whole sheets hide the problems. Look for:
@@ -53,10 +55,12 @@ Input: an image plus a four-ink `palette.json` (from 疊印色盤, the matrix pa
   same screened colour (the clock face, paler than the face) gets its own flag, so its dots can be sparser: `FCE4CD=2:30@1175,265`.
 - `--screen MASK:PCT` (e.g. `--screen 4:60`): print every pixel of that printable colour as PCT% dots instead (the whole colour, everywhere).
   A screen only mixes between its two cells; it can never go past the solid overprint.
-- Dots are round, 80 lpi at the printed size, at per-ink angles (15/75/45/0°), with no dot-gain curve (riso and letterpress dots
-  gain 10–20%, so ask for less than the tone you want). `--width CM` is the printed width of the whole picture; without it the
-  plates are taken to print at 600 dpi (the size the output line reports). Plates and proof are saved tagged with that dpi, so they
-  open at the right size in Illustrator. Printed at another size, the dots scale with it: tell the user the width.
+- Screens are not dotted on the plates: a screened area is a flat grey at its tint (50% → grey 128), saved as plain greyscale
+  with no colour profile, so the plate-maker's RIP screens it with its own, finer dots and its own dot-gain curve. Tell the user
+  to hand the plates and `製版說明.txt` to the plate-maker. Only the proof draws dots, as a preview: round, 80 lpi at the
+  printed size, at per-ink angles (15/75/45/0°, also listed in the note), with no dot-gain curve. `--width CM` is the printed
+  width of the whole picture; without it the plates are taken to print at 600 dpi (the size the output line reports). Plates
+  and proof are saved tagged with that dpi, so they open at the right size in Illustrator and the RIP.
 - `python separate.py --check <palette.json> …` — after changing any knob: every exact palette colour must land on its own inks,
   a grainy fill must come out as one colour, a thin dark line must stay darker than its fill, a soft edge between two
   colours must print only those two (at penalty 3), screens must cover their percentage, a screened colour must be told
@@ -80,7 +84,7 @@ Input: an image plus a four-ink `palette.json` (from 疊印色盤, the matrix pa
    is repainted in the nearest palette colour darker than its fill. Expect the palette's next-darker colour, which can be a big step.
    A piece no longer than `FINE_PX` and the colour of a traced shape it touches is that shape's tip (a teacup's dark inside
    narrowing at the rim), not a line: it keeps its own colour instead of printing as a darker speck.
-7. **Dots:** screened colours print as halftone dots (the plate step; see Options).
+7. **Screens:** screened colours go on the plates as flat greys for the RIP (`plate_tones`); the proof shows them as dots (`print_masks`).
 
 Knobs are constants at the top of `separate.py`. Plates come out at 3× the image size (a 1264 px wide image gives 3792 px: ~16 cm at 600 dpi, ~8 cm at the 1200 dpi
 our shop asks for sharp curves).

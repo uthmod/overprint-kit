@@ -2,7 +2,8 @@
 
 Each pixel is snapped to the nearest of the palette's 16 printable colours
 (bare paper + 4 solo inks + 11 overprints, from palette.json), in Lab space.
-That colour tells which inks are on, so each plate is a plain on/off mask.
+That colour tells which inks are on, so each plate is a plain on/off mask. Screened colours go on the plates as flat
+greys at their percentage, for the plate-maker's RIP to screen; the proof shows them as dots.
 First the art is traced into shapes (lines where the colour jumps); each shape gets one printable colour,
 which wins its close calls, so a flat fill can't flicker between two colours. Fine dark features (hair strands, a rose's
 spiral, a small shadow) are traced too and printed in a colour darker than the fill around them.
@@ -16,8 +17,9 @@ spiral, a small shadow) are traced too and printed in a colour darker than the f
         # and print every pixel labelled mask 4 (ink 3 alone) as a 60% halftone instead of solid
     python separate.py <image.png> <palette.json> --screen-colour F8C4A2=2:50@252,507 --width 12
         # the art's own #F8C4A2 becomes one more colour, printed as ink 2 in 50% dots in the area at 252,507 (a face; without
-        # @x,y everywhere it matches); the dots are 80 lpi
-        # when the picture prints 12 cm wide (without --width: at 600 dpi, the size the 分色 page quotes)
+        # @x,y everywhere it matches). On the plate that area is 50% grey for the RIP; the proof shows 80 lpi dots
+        # when the picture prints 12 cm wide (without --width: at 600 dpi, the size the 分色 page quotes).
+        # <image>-製版說明.txt tells the plate-maker the size, angles and tints.
 """
 import sys
 from pathlib import Path
@@ -56,8 +58,9 @@ N_INKS = np.array([max(bin(m).count("1") - 1, 0) for m in range(16)])  # paper a
 MASKS = np.arange(16)  # labels 0-15 are the palette's 16 colours, each its own ink mask; screened colours come after
 # halftone screens: --screen MASK:PCT prints every pixel of that colour as dots; --screen-colour RRGGBB=MASK:PCT adds the
 # art's own RRGGBB as one more colour, printed as MASK's inks in PCT% dots (a face paler than the hair it shares an ink with).
-# ponytail: plain round AM dots and no dot-gain curve. Riso and letterpress dots gain ~10-20%, so ask for less than you want.
-LPI = 80  # screen ruling in lines per inch, at the printed size
+# The plates carry them as flat greys (plate_tones) so the plate-maker's RIP screens them, with its own dot-gain curve.
+# ponytail: the proof's dots are plain round AM dots with no dot-gain curve, a preview only.
+LPI = 80  # the proof's screen ruling in lines per inch, at the printed size
 DPI = 600  # the printed plate resolution when --width isn't given: the size the 分色 page quotes as 600 dpi
 # per ink 15, 75, 45, 0 degrees (like CMYK, so two screened inks don't moire), as literals so separate.js matches bit for bit
 SCREEN_COS = (0.9659258262890683, 0.25881904510252074, 0.7071067811865476, 1.0)
@@ -65,14 +68,14 @@ SCREEN_SIN = (0.25881904510252074, 0.9659258262890683, 0.7071067811865476, 0.0)
 
 
 def load_set(path):
-    """A palette.json (from 疊印色盤, the matrix page, or the kit email): ink names for the plate files, and the
+    """A palette.json (from 疊印色盤, the matrix page, or the kit email): ink names ("223 U"; plate files drop the space), and the
     16 printable colours as RGB, indexed by ink mask (bit 0 = the first ink printed)."""
     import json
     p = json.loads(Path(path).read_text(encoding="utf-8"))
     if len(p["inks"]) != 4 or len(p["cells"]) != 16:
         sys.exit(f"{path}: 分色需要 4 支墨的色盤（這個有 {len(p['inks'])} 支）")
     field = lambda x, k: x[k] if isinstance(x, dict) else x  # older palette.json files: plain "E1E3E0" and "720U"
-    names = [field(i, "name").replace(" ", "") for i in p["inks"]]
+    names = [field(i, "name") for i in p["inks"]]
     hexes = [field(c, "hex").lstrip("#") for c in p["cells"]]
     return names, np.array([[int(h[i:i + 2], 16) for i in (0, 2, 4)] for h in hexes], dtype=np.float64)
 
@@ -166,6 +169,38 @@ def print_masks(idx, masks, pcts, pitch, areas={}):
     return out
 
 
+def plate_tones(idx, masks, pcts, areas={}):
+    """The plates for the plate-maker's RIP, one uint8 image per ink: 0 where the ink prints solid, a flat grey
+    255 × (1 − pct) where its label is screened (inside areas[label] if given; 50% → 128), 255 elsewhere.
+    print_masks' dots are only the proof's preview of how the RIP will screen these greys."""
+    tint = np.where(pcts > 0, np.floor(255 * (1 - pcts) + 0.5), 0).astype(np.uint8)  # floor(+0.5): rounds like separate.js
+    level = tint[idx]
+    for k in areas:
+        level[(idx == k) & ~areas[k]] = 0  # outside its clicked areas a screened colour prints solid
+    m = masks.astype(np.uint8)[idx]
+    return [np.where(m >> b & 1, level, 255).astype(np.uint8) for b in range(4)]
+
+
+def plate_note(names, tones, dpi):
+    """製版說明.txt for the plate-maker: what the greys mean, the size, and each plate's angle and tints."""
+    h, w = tones[0].shape
+    lines = ["給製版廠的說明", "",
+             f"這 {len(names)} 塊印版是灰階圖，網點還沒有做，請用 RIP 加網：",
+             "・黑色＝100% 實地",
+             "・灰色＝網點，灰階值就是網點大小，例如 50% 灰＝50% 網點",
+             "・白色＝不上墨",
+             "印版沒有做網點擴大補償，請依貴廠的設定處理。", "",
+             f"尺寸：{w} × {h} 像素，{dpi:.0f} dpi，印出來 {w / dpi * 2.54:.1f} × {h / dpi * 2.54:.1f} 公分。",
+             f"網點設定（印刷模擬用的設定，可依貴廠建議調整）：圓點，{LPI} lpi。", ""]
+    for b, (n, t) in enumerate(zip(names, tones)):
+        angle = round(np.degrees(np.arctan2(SCREEN_SIN[b], SCREEN_COS[b])))
+        greys = sorted({int(v) for v in np.unique(t)} - {0, 255})
+        pcts = "、".join(f"{round(100 - v / 2.55)}%" for v in greys)
+        what = f"網點 {pcts}" if greys else "只有實地" if (t == 0).any() else "空白（沒有用到這支油墨）"
+        lines.append(f"{b + 1}. {n}，角度 {angle}°：{what}")
+    return "﻿" + "\n".join(lines) + "\n"  # BOM: older Windows editors read the Chinese right
+
+
 def self_check(palette_paths):
     """Every one of a palette's 16 colours must separate to exactly its own inks. Rerun after touching a knob."""
     for n in palette_paths:
@@ -229,6 +264,12 @@ def self_check(palette_paths):
     out = print_masks(idx, masks, np.append(np.zeros(16), 0.5), DPI / LPI, {16: area})
     top, low = out[15 * SCALE:35 * SCALE, 50 * SCALE:75 * SCALE], out[50 * SCALE:75 * SCALE, 50 * SCALE:75 * SCALE]
     assert abs((top == 2).mean() - 0.5) < 0.05 and (low == 2).mean() > 0.99, "a screen is not limited to the clicked area"
+    # the RIP plates: the clicked area is a flat 50% grey on ink 2's plate, the other patch solid, other plates blank
+    tones = plate_tones(idx, masks, np.append(np.zeros(16), 0.5), {16: area})
+    t2 = tones[1]
+    assert (t2[15 * SCALE:35 * SCALE, 50 * SCALE:75 * SCALE] == 128).mean() > 0.99, "a 50% screen is not a 50% grey plate"
+    assert (t2[50 * SCALE:75 * SCALE, 50 * SCALE:75 * SCALE] == 0).mean() > 0.99, "an unclicked area is not solid on the plate"
+    assert all((tones[b] == 255).all() for b in (0, 2, 3)), "a screen put grey on another ink's plate"
     # a teacup: its body screened, its darker inside (nearer the body's colour than any ink) stays solid
     cup, inside = pal[4] * 0.92, pal[4] * 0.8
     img = np.full((90, 90, 3), pal[0])
@@ -398,13 +439,12 @@ def separate(src, palette_path, out_dir, print_path=None, screens={}, colours=()
 
     stem = Path(src).stem
     Image.fromarray(np.where(lines, 0, 255).astype(np.uint8), "L").save(out_dir / f"{stem}-lines.png")
-    plates = []
-    for b, n in enumerate(names):
-        on = (printed >> b) & 1
-        plate = Image.fromarray(np.where(on, 0, 255).astype(np.uint8), "L")
-        plate.save(out_dir / f"{stem}-plate{b + 1}-{n}.png", dpi=(dpi, dpi))
-        plates.append((n, on.mean()))
-    proof = Image.fromarray(ink_pal[printed].astype(np.uint8), "RGB")  # from the plates, so halftone dots show
+    plates, tones = [], plate_tones(idx, masks, pcts, areas)
+    for b, n in enumerate(names):  # greyscale with no colour profile, so a RIP reads each grey as its tint
+        Image.fromarray(tones[b], "L").save(out_dir / f"{stem}-plate{b + 1}-{n.replace(' ', '')}.png", dpi=(dpi, dpi))
+        plates.append((n, 1 - tones[b].mean() / 255))
+    (out_dir / f"{stem}-製版說明.txt").write_text(plate_note(names, tones, dpi), encoding="utf-8", newline="")  # same bytes as the page
+    proof = Image.fromarray(ink_pal[printed].astype(np.uint8), "RGB")  # with the dots the RIP's screen will make
     proof.save(out_dir / f"{stem}-proof.png", dpi=(dpi, dpi))
 
     # sheet: original | proof on top, the four plates below
@@ -412,8 +452,8 @@ def separate(src, palette_path, out_dir, print_path=None, screens={}, colours=()
     sheet = Image.new("RGB", (tw * 4, th * 3), "white")
     sheet.paste(orig.resize((tw * 2, th * 2)), (0, 0))
     sheet.paste(proof.resize((tw * 2, th * 2)), (tw * 2, 0))
-    for b, n in enumerate(names):
-        sheet.paste(Image.open(out_dir / f"{stem}-plate{b + 1}-{n}.png").convert("RGB").resize((tw, th)), (tw * b, th * 2))
+    for b, t in enumerate(tones):
+        sheet.paste(Image.fromarray(t, "L").convert("RGB").resize((tw, th)), (tw * b, th * 2))
     sheet.save(out_dir / f"{stem}-sheet.png")
     return de, plates, np.bincount(idx.ravel(), minlength=len(pal)) / idx.size, w * 2.54 / dpi
 
@@ -458,4 +498,4 @@ if __name__ == "__main__":
         where = f"in the areas at {' '.join(f'{x},{y}' for x, y in at)}" if at else "everywhere"
         print(f"screened colour #{hexc} (mask {m} at {pct:.0%}, {where}): matches {share[16 + k]:.1%} of the picture")
     if screens or colours:
-        print(f"the dots are {LPI} lpi when the picture prints {cm:.1f} cm wide (--width to change)")
+        print(f"plates carry the screens as greys for the RIP; the proof shows {LPI} lpi dots at {cm:.1f} cm wide (--width to change)")

@@ -550,19 +550,46 @@
     return out;
   }
 
-  /** Plate b as RGBA from printMasks: black where ink b prints, white elsewhere; and its coverage (0–1). */
-  function plate(idx, b) {
-    const out = new Uint8ClampedArray(idx.length * 4);
-    let on = 0;
+  /** Plate b for the plate-maker's RIP, from the labels (not printMasks): 0 where ink b prints solid, a flat grey
+   *  255 × (1 − pct) where its label is screened (inside areas[label] if given; 50% → 128), 255 elsewhere; and its
+   *  coverage (0–1). The same rule as separate.py's plate_tones; printMasks' dots are only the proof's preview. */
+  function plateTone(idx, palette, areas, b) {
+    const { masks, pcts } = palette, A = areas || [], out = new Uint8Array(idx.length);
+    const tint = Array.from(pcts, (p) => (p ? Math.floor(255 * (1 - p) + 0.5) : 0));
+    let ink = 0;
     for (let i = 0; i < idx.length; i++) {
-      const ink = (idx[i] >> b) & 1, v = ink ? 0 : 255;
-      on += ink;
-      out[i * 4] = v; out[i * 4 + 1] = v; out[i * 4 + 2] = v; out[i * 4 + 3] = 255;
+      const k = idx[i];
+      const v = !((masks[k] >> b) & 1) ? 255 : pcts[k] && !(A[k] && !A[k][i]) ? tint[k] : 0;
+      out[i] = v;
+      ink += 255 - v;
     }
-    return { rgba: out, coverage: on / idx.length };
+    return { gray: out, coverage: ink / 255 / idx.length };
   }
 
-  const api = { SCALE, INK_PENALTY, LPI, DPI, parsePalette, withScreens, labels, screenArea, printMasks, proof, plate, _test: { upscale, modeFilter, components, trace, morph } };
+  /** 製版說明.txt for the plate-maker, as separate.py's plate_note writes it: what the greys mean, the size, and each
+   *  plate's angle and tints. names: the inks in print order; grays: plateTone(...).gray per ink. */
+  function plateNote(names, grays, W, H, dpi) {
+    const lines = ['給製版廠的說明', '',
+      `這 ${names.length} 塊印版是灰階圖，網點還沒有做，請用 RIP 加網：`,
+      '・黑色＝100% 實地',
+      '・灰色＝網點，灰階值就是網點大小，例如 50% 灰＝50% 網點',
+      '・白色＝不上墨',
+      '印版沒有做網點擴大補償，請依貴廠的設定處理。', '',
+      `尺寸：${W} × ${H} 像素，${Math.round(dpi)} dpi，印出來 ${(W / dpi * 2.54).toFixed(1)} × ${(H / dpi * 2.54).toFixed(1)} 公分。`,
+      `網點設定（印刷模擬用的設定，可依貴廠建議調整）：圓點，${LPI} lpi。`, ''];
+    names.forEach((n, b) => {
+      const seen = new Uint8Array(256);
+      for (const v of grays[b]) seen[v] = 1;
+      const greys = [];
+      for (let v = 1; v < 255; v++) if (seen[v]) greys.push(`${Math.round(100 - v / 2.55)}%`);
+      const angle = Math.round(Math.atan2(SCREEN_SIN[b], SCREEN_COS[b]) * 180 / Math.PI);
+      const what = greys.length ? `網點 ${greys.join('、')}` : seen[0] ? '只有實地' : '空白（沒有用到這支油墨）';
+      lines.push(`${b + 1}. ${n}，角度 ${angle}°：${what}`);
+    });
+    return '﻿' + lines.join('\n') + '\n'; // BOM: older Windows editors read the Chinese right
+  }
+
+  const api = { SCALE, INK_PENALTY, LPI, DPI, parsePalette, withScreens, labels, screenArea, printMasks, proof, plateTone, plateNote, _test: { upscale, modeFilter, components, trace, morph } };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.OverprintSeparate = api;
 })(globalThis);

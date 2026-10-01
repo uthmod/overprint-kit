@@ -152,7 +152,7 @@
         <ul class="screens" id="screens" aria-label="印成網點的顏色"></ul>
         <div><button class="btn" type="button" id="pickBtn" aria-pressed="false">在圖上選顏色</button></div>
         <label class="width">印刷寬度 <input type="number" id="printWidth" min="1" max="500" step="0.1" inputmode="decimal"> 公分</label>
-        <p class="note">網點是 80 lpi，照這個寬度計算；印得比這個寬或窄，網點會跟著變粗或變細。</p>
+        <p class="note">印刷模擬裡的網點是示意：80 lpi，照這個寬度計算。下載的印版不先做網點，網點的地方是灰色，灰的深淺就是網點大小（50% 網點＝50% 灰）。請把印版交給製版廠用 RIP 加網，網點更細緻，也會照他們的機器補償網點擴大。</p>
       </div>
 
     </section>
@@ -185,7 +185,7 @@
         <h2>下載</h2>
         <p class="note" id="sizeNote">印版是原圖的 3 倍大。</p>
         <div><button class="btn primary" type="button" id="downloadBtn" disabled>下載印版和印刷模擬（ZIP）</button></div>
-        <p class="note">壓縮檔裡有四塊印版（黑色的地方上墨）和一張印刷模擬，都是 PNG。</p>
+        <p class="note">壓縮檔裡有四塊印版、一張印刷模擬，和一份給製版廠的「製版說明」。印版是灰階 PNG：黑色是實地，灰色是網點（還沒加網），白色不上墨。整包交給製版廠，請他們用 RIP 加網；網點角度和尺寸都寫在製版說明裡。</p>
       </div>
 
       <div id="prepare">
@@ -220,7 +220,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="separate.js"></script>
+<script src="separate.js?v=15"></script><!-- bump ?v= whenever separate.js changes: a cached old copy breaks the new page -->
 <script>
 // This round's ballot sets as palette.json (fetched from the kit's palette link when the page was built), and the sample
 // (lossless WebP: a lossy copy's compression noise came out as rough edges and a lost hand).
@@ -377,7 +377,8 @@ function reprint() {
     if (r.areas[j]?.key !== key) r.areas[j] = { key, area: S.screenArea(r, 16 + j, sc.seeds) };
     areas[16 + j] = r.areas[j].area;
   });
-  r.printed = S.printMasks(r.idx, r.W, S.withScreens(state.palette, r.list), state.widthCm ? r.W * 2.54 / state.widthCm : S.DPI, areas);
+  Object.assign(r, { pal: S.withScreens(state.palette, r.list), dpi: state.widthCm ? r.W * 2.54 / state.widthCm : S.DPI, screenAreas: areas });
+  r.printed = S.printMasks(r.idx, r.W, r.pal, r.dpi, areas); // the proof's dots; the plates are greys (plateTone)
   show(r);
 }
 
@@ -428,10 +429,8 @@ function show(r) {
   const plates = $('plates'), plateWidth = (plates.clientWidth / 2) * devicePixelRatio; // sized for the 2-across phone layout
   plates.replaceChildren(...p.inks.map((name, b) => {
     const fig = document.createElement('figure'), frame = document.createElement('div'), c = document.createElement('canvas'), cap = document.createElement('figcaption');
-    thumb(c, r.W, r.H, plateWidth, (i, s, o) => { const v = (idx[i] >> b) & 1 ? 0 : 255; s[o] += v; s[o + 1] += v; s[o + 2] += v; }); // the ZIP gets full size
-    let on = 0;
-    for (let i = 0; i < idx.length; i++) on += (idx[i] >> b) & 1;
-    const coverage = on / idx.length;
+    const { gray, coverage } = S.plateTone(r.idx, r.pal, r.screenAreas, b); // what the ZIP gets, at full size
+    thumb(c, r.W, r.H, plateWidth, (i, s, o) => { const v = gray[i]; s[o] += v; s[o + 1] += v; s[o + 2] += v; });
     c.setAttribute('role', 'img');
     c.setAttribute('aria-label', `${name} 的印版`);
     frame.className = 'frame'; frame.append(c);
@@ -571,17 +570,38 @@ $('printWidth').addEventListener('change', (e) => {
 
 // ---------- download ----------
 const toBlob = (canvas) => new Promise((ok) => canvas.toBlob(ok, 'image/png'));
+const CRC = Array.from({ length: 256 }, (_, n) => { for (let k = 0; k < 8; k++) n = n & 1 ? 0xedb88320 ^ (n >>> 1) : n >>> 1; return n >>> 0; });
+/** A greyscale PNG tagged with its dpi. A canvas only writes RGB, which a RIP colour-converts, shifting the tints;
+ *  plain grey with no colour profile reads as the tint itself (50% grey = 50% dots), like separate.py's plates. */
+async function grayPng(gray, W, H, dpi) {
+  const raw = new Uint8Array((W + 1) * H); // each row: filter byte 0, then the row
+  for (let y = 0; y < H; y++) raw.set(gray.subarray(y * W, (y + 1) * W), y * (W + 1) + 1);
+  const z = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
+  const chunk = (type, data) => {
+    const out = new Uint8Array(data.length + 12), v = new DataView(out.buffer);
+    v.setUint32(0, data.length); out.set(new TextEncoder().encode(type), 4); out.set(data, 8);
+    let c = ~0;
+    for (let i = 4; i < data.length + 8; i++) c = CRC[(c ^ out[i]) & 255] ^ (c >>> 8);
+    v.setUint32(data.length + 8, ~c >>> 0);
+    return out;
+  };
+  const ihdr = new Uint8Array(13), ppm = Math.round(dpi / 0.0254), phys = new Uint8Array(9);
+  new DataView(ihdr.buffer).setUint32(0, W); new DataView(ihdr.buffer).setUint32(4, H); ihdr[8] = 8; // 8-bit, colour type 0 (grey)
+  new DataView(phys.buffer).setUint32(0, ppm); new DataView(phys.buffer).setUint32(4, ppm); phys[8] = 1; // pixels per metre
+  return new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('pHYs', phys), chunk('IDAT', z), chunk('IEND', new Uint8Array(0))], { type: 'image/png' });
+}
 $('downloadBtn').addEventListener('click', async () => {
   const r = state.result, p = state.palette;
   if (!r || state.busy) return;
   $('downloadBtn').disabled = true;
   try {
     setStatus('準備壓縮檔…');
-    const zip = new JSZip(), c = document.createElement('canvas');
+    const zip = new JSZip(), grays = [];
     for (let b = 0; b < 4; b++) {
-      putRGBA(c, S.plate(r.printed, b).rgba, r.W, r.H);
-      zip.file(`${state.stem}-plate${b + 1}-${p.inks[b].replace(/ /g, '')}.png`, await toBlob(c));
+      grays.push(S.plateTone(r.idx, r.pal, r.screenAreas, b).gray);
+      zip.file(`${state.stem}-plate${b + 1}-${p.inks[b].replace(/ /g, '')}.png`, await grayPng(grays[b], r.W, r.H, r.dpi));
     }
+    zip.file(`${state.stem}-製版說明.txt`, S.plateNote(p.inks, grays, r.W, r.H, r.dpi));
     zip.file(`${state.stem}-proof.png`, await toBlob($('proofCanvas')));
     const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
     const filename = `${state.stem}-分色.zip`;
