@@ -43,12 +43,15 @@
     background: var(--sheet); color: var(--gold); font: 600 16px/1.3 var(--body); cursor: pointer; text-align: center; }
   .btn.primary { background: var(--gold); color: var(--gold-ink); }
   .btn:disabled { opacity: 0.5; cursor: default; }
-  .btn:focus-visible, select:focus-visible, .file:focus-within .btn, .choice input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .btn:focus-visible, select:focus-visible, textarea:focus-visible, .file:focus-within .btn, .choice input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   .drop { border: 1px dashed var(--muted); background: var(--sheet); padding: 14px; display: grid; gap: 10px; }
   .drop.over { border-color: var(--gold); background: var(--tint); }
   .file { position: relative; }
   .file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
-  select { width: 100%; min-height: 44px; padding: 8px 10px; font: 16px var(--body); color: var(--ink); background: var(--sheet); border: 1px solid var(--rule); }
+  select, textarea { width: 100%; min-height: 44px; padding: 8px 10px; font: 16px var(--body); color: var(--ink); background: var(--sheet); border: 1px solid var(--rule); }
+  textarea { resize: vertical; line-height: 1.6; }
+  .paste { font-weight: 600; }
+  .btn.link { border: 0; background: none; padding: 0; min-height: 44px; text-decoration: underline; text-underline-offset: 3px; font-weight: 400; }
   .inks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
   .inks li { display: flex; align-items: center; gap: 10px; }
   .chip { width: 18px; height: 18px; flex: none; border: 1px solid rgba(28, 25, 23, 0.2); }
@@ -129,9 +132,13 @@
       <div class="field">
         <h2><span>2</span>色盤</h2>
         <select id="paletteSelect" aria-label="選色盤"></select>
+        <label class="paste" for="paletteText">或貼上您的色盤</label>
+        <textarea id="paletteText" rows="3" placeholder="例如：223 U、720 U、4163 U、2159 U" aria-describedby="paletteHelp"></textarea>
+        <p class="note" id="paletteHelp">在線上的疊印色彩矩陣產生器按「複製內容」，再貼到這裡。投票選的色盤，直接從上面選，或貼上信裡那四支油墨的名稱也可以。</p>
+        <p class="note" id="paletteMsg" role="status"></p>
         <div class="file">
-          <button class="btn" type="button" tabindex="-1" aria-hidden="true">載入 palette.json</button>
-          <input id="paletteInput" type="file" accept=".json,application/json" aria-label="載入 palette.json">
+          <button class="btn link" type="button" tabindex="-1" aria-hidden="true">也可以選一個 palette.json 檔案</button>
+          <input id="paletteInput" type="file" accept=".json,application/json" aria-label="選一個 palette.json 檔案">
         </div>
         <ol class="inks" id="inks" aria-label="四支油墨，照印刷順序"></ol>
         <div class="strip" id="strip" aria-hidden="true"></div>
@@ -269,23 +276,58 @@ function usePalette(json) {
 function fillPresets(extra) {
   const sel = $('paletteSelect');
   const opts = PRESETS.map((p, i) => new Option(`${p.name}（${p.inks.map((k) => k.name).join('、')}）`, String(i)));
-  if (extra) opts.push(new Option(`${extra.name || '您的色盤'}（palette.json）`, 'file'));
+  if (extra) opts.push(new Option(`${extra.name || '您的色盤'}（自訂色盤）`, 'file'));
   sel.replaceChildren(...opts);
 }
 $('paletteSelect').addEventListener('change', (e) => { if (e.target.value !== 'file') usePalette(PRESETS[+e.target.value]); });
+function paletteMsg(text, err) { $('paletteMsg').textContent = text; $('paletteMsg').classList.toggle('err', !!err); }
+/** A palette.json object (from a file or pasted): it joins the list as 自訂色盤 and is used. */
+function useCustom(json) {
+  state.palette = S.parsePalette(json); // throws a readable message when it isn't a palette
+  fillPresets(json);
+  $('paletteSelect').value = 'file';
+  showPalette(state.palette);
+  run();
+}
+/** Pasted text: the 疊印色彩矩陣產生器's 複製內容 (palette.json as text), or just the four ink names of one of the
+ *  ready-made palettes above (what the vote email lists), in any order or punctuation. */
+function pastedPalette(text) {
+  const t = text.trim();
+  if (!t) return null;
+  if (t.startsWith('{')) return { json: JSON.parse(t) }; // SyntaxError when only part of it was pasted
+  const norm = (s) => s.replace(/\s+/g, '').toUpperCase();
+  const names = [...new Set((t.match(/\d{3,4}\s*[UC]\b/gi) || []).map(norm))];
+  const i = PRESETS.findIndex((p) => p.inks.length === names.length && p.inks.every((k) => names.includes(norm(k.name))));
+  if (i >= 0) return { preset: i };
+  throw new Error(names.length
+    ? `${names.map((n) => n.replace(/([UC])$/, ' $1')).join('、')} 不是上面的現成色盤。請在疊印色彩矩陣產生器做好這組色盤，按「複製內容」，再整段貼到這裡。`
+    : '看不懂貼上的內容。請貼上疊印色彩矩陣產生器「複製內容」的文字，或四支油墨的名稱（例如 223 U、720 U、4163 U、2159 U）。');
+}
+$('paletteText').addEventListener('input', (e) => {
+  try {
+    const got = pastedPalette(e.target.value);
+    if (!got) return paletteMsg('');
+    if (got.preset !== undefined) {
+      $('paletteSelect').value = String(got.preset);
+      usePalette(PRESETS[got.preset]);
+      return paletteMsg(`已選「${PRESETS[got.preset].name}」色盤。`);
+    }
+    useCustom(got.json);
+    paletteMsg(`已使用貼上的色盤${got.json.name ? `「${got.json.name}」` : ''}。`);
+  } catch (err) {
+    paletteMsg(err instanceof SyntaxError ? '貼上的內容不完整。請在疊印色彩矩陣產生器按「複製內容」，再整段貼上。' : err.message, true);
+  }
+});
 $('paletteInput').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   e.target.value = '';
   if (!file) return;
   try {
     const json = JSON.parse(await file.text());
-    state.palette = S.parsePalette(json);
-    fillPresets(json);
-    $('paletteSelect').value = 'file';
-    showPalette(state.palette);
-    run();
+    useCustom(json);
+    paletteMsg(`已使用檔案裡的色盤${json.name ? `「${json.name}」` : ''}。`);
   } catch (err) {
-    setStatus(err instanceof SyntaxError ? '這個檔案不是 palette.json。請用信裡下載的 palette.json。' : err.message, true);
+    paletteMsg(err instanceof SyntaxError ? '這個檔案不是 palette.json。請用信裡或疊印色彩矩陣產生器下載的 palette.json。' : err.message, true);
   }
 });
 
