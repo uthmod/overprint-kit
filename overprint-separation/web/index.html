@@ -105,6 +105,7 @@
   footer { margin-top: 48px; border-top: 1px solid var(--rule); padding-top: 16px; color: var(--muted); display: grid; gap: 4px; }
   footer a, .lead a, .note a, .tips a { color: var(--gold); }
   [hidden] { display: none !important; }
+  html { scrollbar-gutter: stable; } /* a scrollbar coming or going (tabs of different height) doesn't shift the page */
   /* tabs: 分色 | 色盤產生器 */
   .tabs { display: flex; flex-wrap: wrap; border-bottom: 2px solid var(--ink); margin: -12px 0 28px; }
   .tabs button { min-height: 48px; padding: 10px 20px; border: 0; border-bottom: 4px solid transparent; margin-bottom: -2px; background: none;
@@ -777,12 +778,16 @@ async function saveFile(filename, blob) {
 
 // ---------- tabs ----------
 function showTab(name) {
+  // The two tabs differ a lot in height (分色 is 2–3× taller), so switching while scrolled down made the browser snap the
+  // page: keep the tab bar where it was on screen, or at the top if it had scrolled out of view.
+  const bar = document.querySelector('.tabs'), at = Math.max(0, bar.getBoundingClientRect().top);
   for (const t of ['separate', 'palette']) {
     const on = t === name;
     $(`tabbtn-${t}`).setAttribute('aria-selected', String(on));
     $(`tabbtn-${t}`).tabIndex = on ? 0 : -1;
     $(`tab-${t}`).hidden = !on;
   }
+  window.scrollTo(0, scrollY + bar.getBoundingClientRect().top - at);
 }
 $('tabbtn-separate').addEventListener('click', () => showTab('separate'));
 $('tabbtn-palette').addEventListener('click', () => showTab('palette'));
@@ -897,7 +902,6 @@ $('genUse').addEventListener('click', () => {
   else useCustom(genJson());
   paletteMsg('已使用色盤產生器做的色盤。');
   showTab('separate');
-  $('tab-separate').scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 $('genCopy').addEventListener('click', async () => {
   const text = JSON.stringify(genJson(), null, 2);
