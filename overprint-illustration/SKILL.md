@@ -30,7 +30,9 @@ prompts and hex colours do best; GPT Image 2 did best in our trials.
 
 1. **Style + medium:** `Minimal <anime|manga|picture-book> spot illustration, printed as a four-colour risograph on pale grey paper <paper>.`
 2. **Scene:** 2–4 elements, and where they sit ("small, in the lower left third"). End with `Nothing else.`
-3. **Space:** `The background is left as bare paper, with no background fill. At least 60% of the image is untouched bare paper <paper>, lots of negative space.`
+3. **Space:** `The background is left as bare paper, with no background fill. At least 60% of the image is untouched bare paper <paper>, lots of negative space. The background is one perfectly smooth, even colour <paper>: no paper texture, no speckle, no noise.`
+   Ask for the smooth background every time, redraws too: a 4K redraw came back with faint speckle over the paper (±1.5 levels),
+   which the separation ignores but which made the lossless sample 7× bigger (6.4 MB vs 0.9 MB once evened out).
 4. **Flat fills** (essential for clean plates): `Every shape is one perfectly solid, uniform flat fill of full-strength ink, like a screen print: no shading inside fills, no highlights, no watercolour, no mottling, no texture, no grain, no pale tints. Shadows only as a few hard-edged shapes of a second ink overprinted on top.`
 5. **Line art:** `Line art in the <darkest single ink> ink.` An outline drawn in the same ink as the fill under it vanishes on the plate, so add `where an outline sits on a fill of the same ink, leave a thin keyline of bare paper instead`.
 6. **Ink map:** `Ink 1 <look> #hex: <elements>. Ink 2 …` for all four inks; assign every element to an ink.
