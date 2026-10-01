@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>疊印分色</title>
+<title>疊印色盤與分色</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;600;700&family=Noto+Serif+TC:wght@600;700&display=swap">
@@ -136,23 +136,27 @@
   .gencell:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
   .geninfo { margin: 0; min-height: 3.4em; padding: 10px 12px; border: 1px solid var(--rule); background: var(--sheet); }
   .bar.left { justify-content: flex-start; }
+  /* 從這張圖找色盤 */
+  .fitlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+  .fitcard { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--rule); background: var(--sheet); }
+  .fitcard h3 { font: 700 16px/1.4 var(--body); }
   @media (prefers-reduced-motion: no-preference) { .btn { transition: background-color 0.15s ease-out; } }
 </style>
 
 <div class="wrap" lang="zh-TW">
   <header>
     <p class="kicker">時分印刷 TeleportPress・疊印工具包</p>
-    <h1>疊印分色</h1>
-    <p class="lead">請放一張只用色盤顏色畫的圖。色盤是四支油墨，加上它們互相疊印（印在同一處）出來的顏色。頁面會把圖拆成四塊印版，一支油墨一塊，印版就是這支油墨要印的圖樣；再做一張印刷模擬，讓您送印前先看效果。圖片只在您的瀏覽器裡處理，不會上傳到任何地方。</p>
+    <h1>疊印色盤與分色</h1>
+    <p class="lead">這一頁有兩個工具。「色盤產生器」：選四支油墨，看它們互相疊印（印在同一處）會出現哪些顏色，做出您的色盤。「分色」：放一張只用色盤顏色畫的圖，頁面會把圖拆成四塊印版（一支油墨一塊，印版就是這支油墨要印的圖樣），再做一張印刷模擬，讓您送印前先看效果。圖片只在您的瀏覽器裡處理，不會上傳到任何地方。</p>
   </header>
   <div class="press" aria-hidden="true"></div>
 
   <div class="tabs" role="tablist" aria-label="工具">
-    <button type="button" role="tab" id="tabbtn-separate" aria-controls="tab-separate" aria-selected="true">分色</button>
-    <button type="button" role="tab" id="tabbtn-palette" aria-controls="tab-palette" aria-selected="false" tabindex="-1">色盤產生器</button>
+    <button type="button" role="tab" id="tabbtn-palette" aria-controls="tab-palette" aria-selected="true">色盤產生器</button>
+    <button type="button" role="tab" id="tabbtn-separate" aria-controls="tab-separate" aria-selected="false" tabindex="-1">分色</button>
   </div>
 
-  <main class="bench" id="tab-separate" role="tabpanel" aria-labelledby="tabbtn-separate">
+  <main class="bench" id="tab-separate" role="tabpanel" aria-labelledby="tabbtn-separate" hidden>
     <section class="ticket" aria-label="分色設定">
       <div class="field">
         <h2><span>1</span>您的圖</h2>
@@ -180,6 +184,10 @@
         <ol class="inks" id="inks" aria-label="四支油墨，照印刷順序"></ol>
         <div class="strip" id="strip" aria-hidden="true"></div>
         <p class="note">上面的清單是四支油墨，照印刷順序排，先印的在前面。清單下的小方格，是這組色盤的 16 種顏色：紙色、四個單色，和 11 個疊印色。</p>
+        <div><button class="btn" type="button" id="fitBtn" disabled>從這張圖找色盤</button></div>
+        <p class="note">適合用幾種平塗顏色畫的圖。頁面會從大約 2,000 支 Pantone U 油墨裡，找出四支油墨和印刷順序，讓油墨本身和疊印出來的顏色，最接近您圖上的顏色。要等幾秒鐘。</p>
+        <p class="note" id="fitMsg" role="status"></p>
+        <ol class="fitlist" id="fitList" aria-label="從這張圖找到的色盤，最接近的在最前面"></ol>
       </div>
 
       <div class="field">
@@ -216,7 +224,8 @@
         <h2>印刷模擬</h2>
         <button class="btn" type="button" id="zoomBtn">放大檢查</button>
       </div>
-      <p class="status" id="status" role="status" aria-live="polite">分色中…</p>
+      <p class="status" id="status" role="status" aria-live="polite">範例圖還沒分色。</p>
+      <div id="sampleRun"><button class="btn primary" type="button" id="sampleBtn">分色範例圖</button><p class="note">想先看看分色的結果，可以用這張範例圖試試。要等半分鐘左右。也可以直接在第 1 步放您自己的圖。</p></div>
       <div class="viewer" id="viewer">
         <div class="viewbar">
           <p class="note">按住圖片拖曳（手機用手指滑動），兩張圖會一起移動。圖是用印版的像素大小顯示，沒有再縮小，方便檢查邊緣和細線。</p>
@@ -275,7 +284,7 @@
     </section>
   </main>
 
-  <section class="bench" id="tab-palette" role="tabpanel" aria-labelledby="tabbtn-palette" hidden>
+  <section class="bench" id="tab-palette" role="tabpanel" aria-labelledby="tabbtn-palette">
     <div class="ticket">
       <div class="field">
         <h2><span>1</span>從現成色盤開始</h2>
@@ -320,6 +329,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="overprint-model.js?v=1"></script><!-- the 疊印色彩矩陣產生器's model + Pantone U table (scripts/overprint-model-entry.js); bump ?v= on rebuild -->
 <script src="separate.js?v=20"></script><!-- bump ?v= whenever separate.js changes: a cached old copy breaks the new page -->
+<script src="palette-fit.js?v=1"></script><!-- 從這張圖找色盤; bump ?v= whenever palette-fit.js changes -->
 <script>
 // This round's ballot sets as palette.json (fetched from the kit's palette link when the page was built), and the sample
 // (lossless WebP: a lossy copy's compression noise came out as rough edges and a lost hand).
@@ -351,14 +361,17 @@ function showPalette(p) {
     li.append(chip, `${i + 1}. ${name}`);
     return li;
   }));
+  strip.replaceChildren(...stripOf(p));
+  renderScreens(); // ink names in the 網點 list
+}
+/** The 16 colours as small squares: paper, then one ink, two inks, … (the strip under the ink list and on each card). */
+function stripOf(p) {
   const bits = (m) => (m & 1) + ((m >> 1) & 1) + ((m >> 2) & 1) + ((m >> 3) & 1);
-  const order = [...Array(16).keys()].sort((a, b) => bits(a) - bits(b) || a - b);
-  strip.replaceChildren(...order.map((m) => {
+  return [...Array(16).keys()].sort((a, b) => bits(a) - bits(b) || a - b).map((m) => {
     const s = document.createElement('span');
     s.style.background = `rgb(${p.rgb[m * 3]},${p.rgb[m * 3 + 1]},${p.rgb[m * 3 + 2]})`;
     return s;
-  }));
-  renderScreens(); // ink names in the 網點 list
+  });
 }
 function usePalette(json) {
   state.palette = S.parsePalette(json);
@@ -444,6 +457,7 @@ async function loadImage(src, name, stem) {
   const rgba = ctx.getImageData(0, 0, w, h).data, rgb = new Uint8Array(w * h * 3);
   for (let i = 0, j = 0; i < rgba.length; i += 4, j += 3) { rgb[j] = rgba[i]; rgb[j + 1] = rgba[i + 1]; rgb[j + 2] = rgba[i + 2]; }
   Object.assign(state, { rgb, w, h, stem, result: null, widthCm: null }); // the old result belongs to the old picture
+  clearFit(); // suggestions belong to the old picture
   drawOrig();
   const pc = $('proofCanvas'), pt = $('proofThumb'); // blank, in the image's shape, until the proof is ready
   pc.width = w; pc.height = h;
@@ -484,6 +498,7 @@ async function run() {
   if (state.busy) { state.pending = true; return; }
   state.busy = true;
   $('downloadBtn').disabled = true;
+  $('sampleRun').hidden = true; // a separation has started: the sample's button is done
   try {
     do {
       state.pending = false;
@@ -552,6 +567,7 @@ function drawOrig() {
     rgba[i * 4 + 3] = 255;
   }
   putRGBA($('origCanvas'), rgba, w, h);
+  state.thumbStale = !previewWidth(); // drawn in the hidden 分色 tab (so are show()'s proof and plates): redrawn when it opens
   thumb($('origThumb'), w, h, previewWidth(), (i, s, o) => { s[o] += rgba[i * 4]; s[o + 1] += rgba[i * 4 + 1]; s[o + 2] += rgba[i * 4 + 2]; });
   $('linesNote').hidden = !lines;
 }
@@ -788,6 +804,7 @@ function showTab(name) {
     $(`tab-${t}`).hidden = !on;
   }
   window.scrollTo(0, scrollY + bar.getBoundingClientRect().top - at);
+  if (name === 'separate' && state.thumbStale) state.result ? show(state.result) : drawOrig(); // previews drawn while hidden
 }
 $('tabbtn-separate').addEventListener('click', () => showTab('separate'));
 $('tabbtn-palette').addEventListener('click', () => showTab('palette'));
@@ -927,7 +944,56 @@ $('pantone-u').replaceChildren(...[...BOOK.keys()].map((v) => node('option', { v
 gen.preset = SAMPLE.palette; gen.inks = presetInks(SAMPLE.palette);
 renderGen();
 
-// ---------- start: the sample, separated, so the page opens showing what it does ----------
+// ---------- 從這張圖找色盤: four inks fitted to the picture's flat colours (palette-fit.js), 3 sets to choose from ----------
+const F = window.OverprintFit;
+const FIT_POOL = F.poolFrom(M);
+let fitRun = 0; // results of an older search (a new picture came, or a newer search) are dropped
+function fitMsg(text, err) { $('fitMsg').textContent = text; $('fitMsg').classList.toggle('err', !!err); }
+function clearFit() { fitRun++; $('fitList').replaceChildren(); fitMsg(''); $('fitBtn').disabled = !state.rgb; }
+function fitCard(found, i) {
+  const name = `從圖找的色盤 ${i + 1}`, inks = found.inks.map((n, k) => ({ name: n, print: k + 1, alpha: 0 }));
+  const json = M.paletteJson(name, inks, BOOK), p = S.parsePalette(json);
+  const cells = M.simulate({ inks, paper: M.STOCK, trapping: M.DEFAULT_TRAPPING, book: BOOK }).flat();
+  const list = node('ol', { className: 'inks' }, ...p.inks.map((n, k) => {
+    const chip = node('span', { className: 'chip' });
+    chip.style.background = `rgb(${p.rgb[(1 << k) * 3]},${p.rgb[(1 << k) * 3 + 1]},${p.rgb[(1 << k) * 3 + 2]})`;
+    return node('li', {}, chip, `${k + 1}. ${n}`);
+  }));
+  list.setAttribute('aria-label', '四支油墨，照印刷順序');
+  const strip = node('div', { className: 'strip' }, ...stripOf(p));
+  strip.setAttribute('aria-hidden', 'true');
+  const use = node('button', { type: 'button', className: 'btn primary', textContent: '用這組分色' });
+  use.addEventListener('click', () => {
+    useCustom(json);
+    gen.preset = null; gen.inks = inks; renderGen();
+    paletteMsg(`已使用「${name}」。想換掉其中一支油墨，可以到「色盤產生器」分頁調整。`);
+  });
+  return node('li', { className: 'fitcard' }, node('h3', { textContent: name }), list, strip,
+    node('p', { className: 'note', textContent: `和您的圖平均相差 ${found.estimate.toFixed(1)}（數字越小，印出來越像原圖）。` }),
+    ...M.setNotes(inks, cells, BOOK).filter((n) => n.warn).map((n) => node('p', { className: 'note', textContent: n.text })),
+    node('div', {}, use));
+}
+$('fitBtn').addEventListener('click', async () => {
+  if (!state.rgb) return;
+  const my = ++fitRun;
+  $('fitBtn').disabled = true; $('fitList').replaceChildren(); fitMsg('找色盤中，要等幾秒鐘…');
+  try {
+    const art = F.artColours(state.rgb, state.w, state.h);
+    const penalty = +document.querySelector('input[name="penalty"]:checked').value;
+    const found = await F.fitInWorker(art, FIT_POOL, { penalty });
+    if (my !== fitRun) return;
+    $('fitList').replaceChildren(...found.map(fitCard));
+    fitMsg(art.coverage < 0.9
+      ? '這張圖有很多不是平塗的地方（像照片、漸層或紋理），下面的色盤只能接近它的主要顏色。'
+      : `找到 ${found.length} 組，最接近的在最前面。按「用這組分色」就會用這組色盤分色。`);
+  } catch (err) {
+    if (my === fitRun) fitMsg('找色盤失敗：' + ((err && err.message) || err), true);
+  } finally {
+    if (my === fitRun) $('fitBtn').disabled = !state.rgb;
+  }
+});
+
+// ---------- start: the sample, loaded but not separated (「分色範例圖」 separates it: ~19 s and ~750 MB on a page that opens on 色盤產生器) ----------
 if (window.claude && window.claude.use) {
   window.claude.use('downloads').then((dl) => { if (!dl) $('downloadBtn').hidden = true; }); // no save dialog in this view
 }
@@ -939,6 +1005,6 @@ state.screens = SAMPLE.screens.map((sc) => ({ ...sc }));
 renderScreens();
 loadImage(SAMPLE.src, SAMPLE.name + '（' + PRESETS[SAMPLE.palette].name + '色盤）', SAMPLE.file).then((k) => {
   if (k < 1) state.screens.forEach((sc) => { sc.seeds = sc.seeds.map(([x, y]) => [Math.floor(x * k), Math.floor(y * k)]); }); // a phone shrank the sample
-  return run();
 }, (err) => setStatus(err.message, true));
+$('sampleBtn').addEventListener('click', run);
 </script>
