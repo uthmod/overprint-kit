@@ -11,7 +11,7 @@ Files: `firefly-helpers.js` (pasted into the Firefly tab), `recv.py` (a tiny loc
    (take a full-resolution screenshot first; dropdown rows are easy to miss by one, and a click during the menu's ~1 s fade-in lands nowhere).
    **Bigger pictures:** GPT Image 2 makes about 1 megapixel at every aspect (3:2 = 1264×848); its 品質 only adds detail.
    Gemini 3.1 (Nano Banana 2) has a resolution picker: at 2K, 3:2 is 2528×1696 for the same 20 credits.
-   GPT Image 2.5 Flare goes to 1536×1024 (5 credits). The browser 分色 page shrinks anything over 1.8M pixels.
+   GPT Image 2.5 Flare goes to 1536×1024 (5 credits). The browser 分色 page shrinks anything over 4M pixels; for 600 dpi art at print size, take the largest size offered.
    If Chrome is minimized, Firefly lays out for a tiny window and hides its generate button: ask the user to restore the window.
 3. `__ff.run(prompt)`, then poll `__ff.state` in short calls (wait loops of 20 s or less: a javascript call dies at about 45 s, and timers in a hidden tab run slow).
    An image takes 20–35 s. If nothing arrives after ~60 s, the generate click didn't take: check the prompt box holds the prompt and run again.

@@ -183,7 +183,7 @@
 
       <div class="download">
         <h2>下載</h2>
-        <p class="note" id="sizeNote">印版是原圖的 3 倍大。</p>
+        <p class="note" id="sizeNote">印版是原圖的 2 倍大。</p>
         <div><button class="btn primary" type="button" id="downloadBtn" disabled>下載印版和印刷模擬（ZIP）</button></div>
         <p class="note">壓縮檔裡有四塊印版、一張印刷模擬，和一份給製版廠的「製版說明」。印版是灰階 TIFF：黑色是實地，灰色是網點（還沒加網），白色不上墨。整包交給製版廠，請他們用 RIP 加網；網點角度和尺寸都寫在製版說明裡。</p>
       </div>
@@ -203,9 +203,9 @@
       <div>
         <h2 style="margin-bottom:8px">圖的大小怎麼影響分色</h2>
         <ul class="tips">
-          <li><b>印版是圖的 3 倍大。</b>分色時先把圖放大 3 倍，細線才印得出實心。圖的寬度（像素）除以印刷寬度（英吋），就是圖的 dpi，印版是它的 3 倍：圖有 200 dpi，印版就有 600 dpi，印起來清楚；400 dpi 最理想，印版 1200 dpi，曲線最銳利。例如 1600 像素寬的圖，印 20 公分寬約 200 dpi，印 10 公分寬約 400 dpi。分色後，上面「下載」會照您的圖算出可以印多大。</li>
-          <li><b>圖太小，邊緣會有鋸齒。</b>曲線變成一階一階的，細線也會斷斷續續。把小圖放大再上傳沒有用，放大不會多出細節；請從原檔用較大的尺寸重新輸出。</li>
-          <li><b>圖太大，會先縮小。</b>這個頁面最多處理大約 180 萬像素的圖（3:2 的圖約 1640 × 1100 像素），更大的會先自動縮小，很細的淡色線可能因此不見。要用原尺寸分色，請用工具包裡 Claude Code 版的「分色」。</li>
+          <li><b>照實際印刷尺寸，準備 600 dpi 的圖。</b>圖的寬度（像素）＝印刷寬度（英吋）× 600。例如印 10 公分寬，圖要約 2360 像素寬。分色時圖會放大 2 倍，印版就有 1200 dpi，曲線最銳利。簡單的線稿能畫到 1200 dpi 更好，但很吃電腦效能，600 dpi 就夠了。分色後，上面「下載」會照您的圖算出可以印多大。</li>
+          <li><b>不要把小圖放大再用。</b>放大不會多出細節，只會把模糊和雜點一起放大，色塊的邊界變得不清楚，細節也會走樣；印版的邊緣也會有鋸齒，曲線變成一階一階的。圖不夠大，請從原檔用 600 dpi 重新輸出；AI 生成的圖，請選最高的解析度。</li>
+          <li><b>圖太大，會先縮小。</b>這個頁面最多處理大約 400 萬像素的圖（3:2 的圖約 2450 × 1630 像素，600 dpi 可以印約 10 × 7 公分），更大的會先自動縮小，很細的淡色線可能因此不見。要印更大、用原尺寸分色，請用工具包裡 Claude Code 版的「分色」，它沒有這個限制。</li>
           <li><b>細線要夠寬。</b>淺色的細線和小點至少畫 2 個像素寬，更細的會被當成雜點去掉。比旁邊深、寬度在 11 像素以內的細線會自動補回來，印成下一個較深的疊印色。</li>
           <li><b>換了尺寸，請再檢查一次。</b>同一張圖換尺寸後，分色結果可能有些不同。例如一筆深色花瓣在小圖裡不到 11 像素寬，會當成細線印成較深的疊印色；圖放大後同一筆超過 11 像素，就會印成和旁邊一樣的顏色。換尺寸後，請按「放大檢查」對照原圖再看一次。</li>
         </ul>
@@ -220,7 +220,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="separate.js?v=15"></script><!-- bump ?v= whenever separate.js changes: a cached old copy breaks the new page -->
+<script src="separate.js?v=17"></script><!-- bump ?v= whenever separate.js changes: a cached old copy breaks the new page -->
 <script>
 // This round's ballot sets as palette.json (fetched from the kit's palette link when the page was built), and the sample
 // (lossless WebP: a lossy copy's compression noise came out as rough edges and a lost hand).
@@ -229,7 +229,7 @@ const SAMPLE = { name: '範例：愛麗絲', file: 'alice', src: 'data:image/web
   { rgb: [254, 229, 207], mask: 2, pct: 0.3, seeds: [[1521, 343]] }, { rgb: [132, 188, 237], mask: 4, pct: 0.7, seeds: [[621, 608]] }] };
 // 粉彩: the sample's light-blue teacup has a matching ink there, not in 對比. Her skin is a 50% 720 U screen, or the face
 // merges with the hair (both 720 U); only her face and arm, not the same-coloured hearts and clock face.
-const MAX_PIXELS = 1800000; // 3× stays under the 16.7M-pixel canvas limit on iPhones (and ~400 MB of working memory); bigger pictures are shrunk to fit
+const MAX_PIXELS = 4000000; // 2× (S.SCALE) stays under the 16.7M-pixel canvas limit on iPhones (and ~400 MB of working memory); bigger pictures are shrunk to fit
 
 const $ = (id) => document.getElementById(id);
 const S = window.OverprintSeparate;
@@ -445,7 +445,7 @@ function show(r) {
   $('stats').textContent = `和最接近的印刷色平均差 ${r.de.toFixed(1)}（數字越小，印出來越像原圖）；用到 15 種油墨顏色中的 ${used} 種` +
     (r.list.length ? `，${r.list.length} 個網點色有 ${dots} 個用上` : '') + `。花了 ${r.secs.toFixed(1)} 秒。`;
   $('printWidth').value = state.widthCm || +cm(r.W, S.DPI);
-  $('sizeNote').textContent = `印版是原圖的 3 倍大（${r.W} × ${r.H} 像素）。印 ${cm(r.W, 600)} × ${cm(r.H, 600)} 公分以內都清楚（600 dpi）；要曲線最銳利（1200 dpi），印 ${cm(r.W, 1200)} × ${cm(r.H, 1200)} 公分以內。`;
+  $('sizeNote').textContent = `印版是原圖的 2 倍大（${r.W} × ${r.H} 像素）。印 ${cm(r.W, 1200)} × ${cm(r.H, 1200)} 公分以內，印版有 1200 dpi，曲線最銳利（這時圖是 600 dpi）；印到 ${cm(r.W, 600)} × ${cm(r.H, 600)} 公分，印版只有 600 dpi，曲線會比較粗。`;
   setStatus('分色完成。');
 }
 

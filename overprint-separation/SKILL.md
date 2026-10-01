@@ -59,7 +59,7 @@ Input: an image plus a four-ink `palette.json` (from 疊印色盤, the matrix pa
   TIFF with no colour profile (PackBits, baseline TIFF that every RIP reads), so the plate-maker's RIP screens it with its own, finer dots and its own dot-gain curve. Tell the user
   to hand the plates and `製版說明.txt` to the plate-maker. Only the proof draws dots, as a preview: round, 80 lpi at the
   printed size, at per-ink angles (15/75/45/0°, also listed in the note), with no dot-gain curve. `--width CM` is the printed
-  width of the whole picture; without it the plates are taken to print at 600 dpi (the size the output line reports). Plates
+  width of the whole picture; without it the plates are taken to print at 1200 dpi (art at 600 dpi; the size the output line reports). Plates
   and proof are saved tagged with that dpi, so they open at the right size in Illustrator and the RIP.
 - `python separate.py --check <palette.json> …` — after changing any knob: every exact palette colour must land on its own inks,
   a grainy fill must come out as one colour, a thin dark line must stay darker than its fill, a soft edge between two
@@ -69,7 +69,8 @@ Input: an image plus a four-ink `palette.json` (from 疊印色盤, the matrix pa
 
 ## How it works (for tuning)
 
-1. 3× Lanczos upscale, so 1–2 px lines keep a solid core.
+1. 2× Lanczos upscale (`SCALE`), so 1–2 px lines keep a solid core. Ask for art at 600 dpi at the printed size, which gives
+   1200 dpi plates; enlarging a small picture more only magnifies its blur and noise (founder, 2026-10-01: was 3×).
 2. **Shapes:** the original is traced; a line is any pixel whose colour slope is > `EDGE_DE` 3 ΔE/px. Each area the lines close off
    gets one printable colour from its mean colour, and that colour wins every pixel within `TIE_DE` 12 of its own best. This keeps a flat fill from flickering between two colours.
 3. **Soft edges:** a line pixel whose colour is a mix of the two nearest shapes (within `BLEND_R` 3 px, `BLEND_RGB` 20)
@@ -86,5 +87,5 @@ Input: an image plus a four-ink `palette.json` (from 疊印色盤, the matrix pa
    narrowing at the rim), not a line: it keeps its own colour instead of printing as a darker speck.
 7. **Screens:** screened colours go on the plates as flat greys for the RIP (`plate_tones`); the proof shows them as dots (`print_masks`).
 
-Knobs are constants at the top of `separate.py`. Plates come out at 3× the image size (a 1264 px wide image gives 3792 px: ~16 cm at 600 dpi, ~8 cm at the 1200 dpi
+Knobs are constants at the top of `separate.py`. Plates come out at 2× the image size (a 2362 px wide image, 10 cm at 600 dpi, gives 4724 px: 10 cm at the 1200 dpi
 our shop asks for sharp curves).

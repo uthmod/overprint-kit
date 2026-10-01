@@ -18,7 +18,7 @@ spiral, a small shadow) are traced too and printed in a colour darker than the f
     python separate.py <image.png> <palette.json> --screen-colour F8C4A2=2:50@252,507 --width 12
         # the art's own #F8C4A2 becomes one more colour, printed as ink 2 in 50% dots in the area at 252,507 (a face; without
         # @x,y everywhere it matches). On the plate that area is 50% grey for the RIP; the proof shows 80 lpi dots
-        # when the picture prints 12 cm wide (without --width: at 600 dpi, the size the 分色 page quotes).
+        # when the picture prints 12 cm wide (without --width: plates at 1200 dpi, i.e. art drawn at 600 dpi).
         # <image>-製版說明.txt tells the plate-maker the size, angles and tints.
 """
 import sys
@@ -28,7 +28,9 @@ import cv2
 import numpy as np
 from PIL import Image, ImageFilter
 
-SCALE = 3
+# ponytail: the art is enlarged SCALE× before classifying. 2 (founder, 2026-10-01): art prepared at 600 dpi at print size
+# gives 1200 dpi plates; enlarging a small picture more only magnifies its blur and noise. Was 3 until v17.
+SCALE = 2
 # ponytail: generated art is a little off the true ink colours; charging ~8 dE per extra overprinted ink makes a muted pink
 # snap to 223 U rather than a 3-ink mauve. Raise it if plates grow stray overprints, lower it if dark lines vanish.
 # It is intent, not physics: art that uses the overlap colours on purpose (a 15-colour map) wants --penalty 6, or
@@ -61,7 +63,7 @@ MASKS = np.arange(16)  # labels 0-15 are the palette's 16 colours, each its own 
 # The plates carry them as flat greys (plate_tones) so the plate-maker's RIP screens them, with its own dot-gain curve.
 # ponytail: the proof's dots are plain round AM dots with no dot-gain curve, a preview only.
 LPI = 80  # the proof's screen ruling in lines per inch, at the printed size
-DPI = 600  # the printed plate resolution when --width isn't given: the size the 分色 page quotes as 600 dpi
+DPI = 1200  # the printed plate resolution when --width isn't given: art at 600 dpi × SCALE 2
 # per ink 15, 75, 45, 0 degrees (like CMYK, so two screened inks don't moire), as literals so separate.js matches bit for bit
 SCREEN_COS = (0.9659258262890683, 0.25881904510252074, 0.7071067811865476, 1.0)
 SCREEN_SIN = (0.25881904510252074, 0.9659258262890683, 0.7071067811865476, 0.0)
@@ -401,7 +403,7 @@ def fine_features(orig, img, pal, idx, shape, mean, masks=MASKS):
 def labels(orig, pal, masks=MASKS):
     """Printable colour per pixel at SCALE x the original, as an index into pal (the palette's 16 colours are their own
     ink masks; screened colours follow, their masks in masks); returns (labels, mean dE, traced lines)."""
-    # ponytail: 3x Lanczos upscale first so 1-2px line art keeps a solid core instead of breaking into dashes
+    # ponytail: SCALE× Lanczos upscale first so 1-2px line art keeps a solid core instead of breaking into dashes
     img = np.asarray(orig.resize((orig.width * SCALE, orig.height * SCALE), Image.LANCZOS), dtype=np.float64)
     h, w, _ = img.shape
     # lines keep their per-pixel colour, so thin features (outlines, a rope) survive as they did before shapes
@@ -410,7 +412,7 @@ def labels(orig, pal, masks=MASKS):
     edge_prefer(shape, mean, lbl, img, prefer)
     idx, de = classify(img, pal, prefer, masks)
     # ponytail: mode filter kills risograph grain speckle; raise the size if plates look noisy
-    idx = np.array(Image.fromarray(idx, "L").filter(ImageFilter.ModeFilter(7)))
+    idx = np.array(Image.fromarray(idx, "L").filter(ImageFilter.ModeFilter(2 * SCALE + 1)))  # ~2.5 original px
     fine_features(orig, img, pal, idx, shape, mean, masks)
     return idx, de, lines
 

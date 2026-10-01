@@ -1,12 +1,12 @@
 // separate.js — 分色 in the browser: a JavaScript port of ../separate.py (same constants, same steps, same order),
 // so a plate made here matches one made in Claude Code. One image + a four-ink palette.json → a printable colour per
-// pixel at 3× the image size (labels 0–15 are the palette's colours, each its own ink mask; screened colours follow);
+// pixel at SCALE× (2×) the image size (labels 0–15 are the palette's colours, each its own ink mask; screened colours follow);
 // printMasks turns them into ink masks with halftone dots, and plate b is (mask >> b) & 1 (bit 0 = the first ink printed).
 // Plain script: window.OverprintSeparate in a page, module.exports in Node (the parity check against separate.py).
 (function (root) {
   'use strict';
 
-  const SCALE = 3;
+  const SCALE = 2; // as separate.py: art at 600 dpi → 1200 dpi plates
   const INK_PENALTY = 8; // dE per extra overprinted ink for off-palette pixels (the Python --penalty)
   const L_WEIGHT = 0.3, EXACT_DE = 4, EDGE_DE = 3, TIE_DE = 12, MIN_AREA = 12;
   const FINE_PX = 11, FINE_DE = 6, FINE_MIN = 4;
@@ -15,7 +15,7 @@
   const bits = (m) => (m & 1) + ((m >> 1) & 1) + ((m >> 2) & 1) + ((m >> 3) & 1);
   const N_INKS = Array.from({ length: 16 }, (_, m) => Math.max(bits(m) - 1, 0)); // paper and solo inks are free
   // halftone screens: a screened colour is the art's own colour, printed as an ink mask in dots (see separate.py)
-  const LPI = 80, DPI = 600;
+  const LPI = 80, DPI = 1200;
   const SCREEN_COS = [0.9659258262890683, 0.25881904510252074, 0.7071067811865476, 1.0];
   const SCREEN_SIN = [0.25881904510252074, 0.9659258262890683, 0.7071067811865476, 0.0];
 
@@ -87,7 +87,7 @@
     return best;
   }
 
-  // ---------- 3× upscale: Pillow's Lanczos (support 3, 22-bit fixed point, horizontal pass first, 8-bit between) ----------
+  // ---------- SCALE× upscale: Pillow's Lanczos (support 3, 22-bit fixed point, horizontal pass first, 8-bit between) ----------
   const sinc = (x) => (x === 0 ? 1 : Math.sin(x * Math.PI) / (x * Math.PI));
   const lanczos = (x) => (x >= -3 && x < 3 ? sinc(x) * sinc(x / 3) : 0);
   function coeffs(inSize, outSize) {
@@ -263,7 +263,7 @@
 
   // ---------- 7×7 mode filter (Pillow's ModeFilter: most frequent value if it appears > 2 times, lowest on ties) ----------
   function modeFilter(src, W, H) {
-    const out = new Uint8Array(W * H), hist = new Int32Array(256), R = 3;
+    const out = new Uint8Array(W * H), hist = new Int32Array(256), R = SCALE; // (2·SCALE+1)², as separate.py
     for (let y = 0; y < H; y++) {
       const y0 = Math.max(0, y - R), y1 = Math.min(H - 1, y + R);
       hist.fill(0);
@@ -457,7 +457,7 @@
 
   // ---------- the whole separation ----------
   const pause = () => new Promise((r) => setTimeout(r, 0));
-  /** rgb: Uint8Array w*h*3. Returns the ink mask per pixel at 3× (W×H), the mean dE to the nearest printable colour,
+  /** rgb: Uint8Array w*h*3. Returns the ink mask per pixel at SCALE× (W×H), the mean dE to the nearest printable colour,
    *  and the traced line layer. onStage(text) is called (and awaited) before each step, for a progress line. */
   async function labels(rgb, w, h, palette, opts) {
     const o = opts || {}, pen = o.penalty == null ? INK_PENALTY : o.penalty;
