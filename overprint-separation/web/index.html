@@ -964,9 +964,12 @@ function fitCard(found, i) {
   strip.setAttribute('aria-hidden', 'true');
   const use = node('button', { type: 'button', className: 'btn primary', textContent: '用這組分色' });
   use.addEventListener('click', () => {
-    useCustom(json);
+    const had = state.screens.length;
+    state.screens = []; // the search scored the picture without 網點; kept, they'd print in whatever ink now sits in their slot
+    useCustom(json); // re-lists the 網點 rows and separates
     gen.preset = null; gen.inks = inks; renderGen();
-    paletteMsg(`已使用「${name}」。想換掉其中一支油墨，可以到「色盤產生器」分頁調整。`);
+    paletteMsg(`已使用「${name}」。` + (had ? '原本的網點設定已清除，需要的話，可以在第 4 步重新設定。' : '') +
+      '想換掉其中一支油墨，可以到「色盤產生器」分頁調整。');
   });
   return node('li', { className: 'fitcard' }, node('h3', { textContent: name }), list, strip,
     node('p', { className: 'note', textContent: `和您的圖平均相差 ${found.estimate.toFixed(1)}（數字越小，印出來越像原圖）。` }),
