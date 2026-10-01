@@ -9,7 +9,7 @@ which wins its close calls, so a flat fill can't flicker between two colours. Fi
 spiral, a small shadow) are traced too and printed in a colour darker than the fill around them.
 
     python separate.py <image.png> <palette.json>
-    -> <image>-plate1-223U.png ... <image>-proof.png, <image>-sheet.png, <image>-lines.png (next to the image)
+    -> <image>-plate1-223U.tif ... <image>-proof.png, <image>-sheet.png, <image>-lines.png (next to the image)
     python separate.py <image.png> <palette.json> --penalty 6   # for art that uses the overlap colours on purpose
     python separate.py --check <palette.json> [...]             # every exact palette colour lands on its own inks
     python separate.py <image.png> <palette.json> --print other.json --screen 4:60
@@ -440,8 +440,10 @@ def separate(src, palette_path, out_dir, print_path=None, screens={}, colours=()
     stem = Path(src).stem
     Image.fromarray(np.where(lines, 0, 255).astype(np.uint8), "L").save(out_dir / f"{stem}-lines.png")
     plates, tones = [], plate_tones(idx, masks, pcts, areas)
-    for b, n in enumerate(names):  # greyscale with no colour profile, so a RIP reads each grey as its tint
-        Image.fromarray(tones[b], "L").save(out_dir / f"{stem}-plate{b + 1}-{n.replace(' ', '')}.png", dpi=(dpi, dpi))
+    for b, n in enumerate(names):  # greyscale TIFF with no colour profile, so a RIP reads each grey as its tint;
+        # PackBits is baseline TIFF (every RIP reads it) and shrinks a flat plate ~30×
+        Image.fromarray(tones[b], "L").save(out_dir / f"{stem}-plate{b + 1}-{n.replace(' ', '')}.tif", dpi=(dpi, dpi),
+                                            compression="packbits")
         plates.append((n, 1 - tones[b].mean() / 255))
     (out_dir / f"{stem}-製版說明.txt").write_text(plate_note(names, tones, dpi), encoding="utf-8", newline="")  # same bytes as the page
     proof = Image.fromarray(ink_pal[printed].astype(np.uint8), "RGB")  # with the dots the RIP's screen will make

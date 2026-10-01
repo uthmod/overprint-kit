@@ -185,7 +185,7 @@
         <h2>下載</h2>
         <p class="note" id="sizeNote">印版是原圖的 3 倍大。</p>
         <div><button class="btn primary" type="button" id="downloadBtn" disabled>下載印版和印刷模擬（ZIP）</button></div>
-        <p class="note">壓縮檔裡有四塊印版、一張印刷模擬，和一份給製版廠的「製版說明」。印版是灰階 PNG：黑色是實地，灰色是網點（還沒加網），白色不上墨。整包交給製版廠，請他們用 RIP 加網；網點角度和尺寸都寫在製版說明裡。</p>
+        <p class="note">壓縮檔裡有四塊印版、一張印刷模擬，和一份給製版廠的「製版說明」。印版是灰階 TIFF：黑色是實地，灰色是網點（還沒加網），白色不上墨。整包交給製版廠，請他們用 RIP 加網；網點角度和尺寸都寫在製版說明裡。</p>
       </div>
 
       <div id="prepare">
@@ -570,25 +570,40 @@ $('printWidth').addEventListener('change', (e) => {
 
 // ---------- download ----------
 const toBlob = (canvas) => new Promise((ok) => canvas.toBlob(ok, 'image/png'));
-const CRC = Array.from({ length: 256 }, (_, n) => { for (let k = 0; k < 8; k++) n = n & 1 ? 0xedb88320 ^ (n >>> 1) : n >>> 1; return n >>> 0; });
-/** A greyscale PNG tagged with its dpi. A canvas only writes RGB, which a RIP colour-converts, shifting the tints;
- *  plain grey with no colour profile reads as the tint itself (50% grey = 50% dots), like separate.py's plates. */
-async function grayPng(gray, W, H, dpi) {
-  const raw = new Uint8Array((W + 1) * H); // each row: filter byte 0, then the row
-  for (let y = 0; y < H; y++) raw.set(gray.subarray(y * W, (y + 1) * W), y * (W + 1) + 1);
-  const z = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
-  const chunk = (type, data) => {
-    const out = new Uint8Array(data.length + 12), v = new DataView(out.buffer);
-    v.setUint32(0, data.length); out.set(new TextEncoder().encode(type), 4); out.set(data, 8);
-    let c = ~0;
-    for (let i = 4; i < data.length + 8; i++) c = CRC[(c ^ out[i]) & 255] ^ (c >>> 8);
-    v.setUint32(data.length + 8, ~c >>> 0);
-    return out;
-  };
-  const ihdr = new Uint8Array(13), ppm = Math.round(dpi / 0.0254), phys = new Uint8Array(9);
-  new DataView(ihdr.buffer).setUint32(0, W); new DataView(ihdr.buffer).setUint32(4, H); ihdr[8] = 8; // 8-bit, colour type 0 (grey)
-  new DataView(phys.buffer).setUint32(0, ppm); new DataView(phys.buffer).setUint32(4, ppm); phys[8] = 1; // pixels per metre
-  return new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('pHYs', phys), chunk('IDAT', z), chunk('IEND', new Uint8Array(0))], { type: 'image/png' });
+/** A plate as a greyscale TIFF: 8-bit, black is zero, no colour profile (so a RIP reads each grey as its tint: 50% grey
+ *  = 50% dots), tagged with its dpi. PackBits compression is baseline TIFF, which every RIP reads, and packs each row's
+ *  runs of one grey, so a flat plate is a few hundred KB instead of 16 MB. Like separate.py's .tif plates. */
+function grayTiff(gray, W, H, dpi) {
+  const data = new Uint8Array(H * (W + Math.ceil(W / 128))); // PackBits' worst case per row
+  let n = 0;
+  for (let y = 0; y < H; y++) { // each row packed on its own, as TIFF requires
+    const row = gray.subarray(y * W, (y + 1) * W);
+    for (let i = 0; i < W;) {
+      let r = 1;
+      while (i + r < W && r < 128 && row[i + r] === row[i]) r++;
+      if (r > 1) { data[n++] = 257 - r; data[n++] = row[i]; i += r; continue; } // a run: 1 − r as a signed byte
+      const s = i;
+      while (i < W && i - s < 128 && !(i + 1 < W && row[i + 1] === row[i])) i++;
+      if (i === s) i++; // keep a lone byte before a run
+      data[n++] = i - s - 1; data.set(row.subarray(s, i), n); n += i - s; // a literal: count − 1, then the bytes
+    }
+  }
+  const entries = [ // [tag, type (3 SHORT, 4 LONG, 5 RATIONAL), value], sorted by tag
+    [256, 4, W], [257, 4, H], [258, 3, 8], [259, 3, 32773], [262, 3, 1], [273, 4, 0], [277, 3, 1],
+    [278, 4, H], [279, 4, n], [282, 5, 0], [283, 5, 0], [296, 3, 2]];
+  const ifd = 8, rat = ifd + 2 + entries.length * 12 + 4, strip = rat + 16;
+  const head = new Uint8Array(strip), v = new DataView(head.buffer);
+  v.setUint16(0, 0x4949); v.setUint16(2, 42, true); v.setUint32(4, ifd, true); // "II", 42, first IFD
+  v.setUint16(ifd, entries.length, true);
+  entries.forEach(([tag, type, val], k) => {
+    const o = ifd + 2 + k * 12;
+    v.setUint16(o, tag, true); v.setUint16(o + 2, type, true); v.setUint32(o + 4, 1, true);
+    if (tag === 273) val = strip;
+    if (type === 5) val = tag === 282 ? rat : rat + 8;
+    if (type === 3) v.setUint16(o + 8, val, true); else v.setUint32(o + 8, val, true);
+  });
+  for (const o of [rat, rat + 8]) { v.setUint32(o, Math.round(dpi * 1000), true); v.setUint32(o + 4, 1000, true); }
+  return new Blob([head, data.subarray(0, n)], { type: 'image/tiff' });
 }
 $('downloadBtn').addEventListener('click', async () => {
   const r = state.result, p = state.palette;
@@ -599,7 +614,7 @@ $('downloadBtn').addEventListener('click', async () => {
     const zip = new JSZip(), grays = [];
     for (let b = 0; b < 4; b++) {
       grays.push(S.plateTone(r.idx, r.pal, r.screenAreas, b).gray);
-      zip.file(`${state.stem}-plate${b + 1}-${p.inks[b].replace(/ /g, '')}.png`, await grayPng(grays[b], r.W, r.H, r.dpi));
+      zip.file(`${state.stem}-plate${b + 1}-${p.inks[b].replace(/ /g, '')}.tif`, grayTiff(grays[b], r.W, r.H, r.dpi));
     }
     zip.file(`${state.stem}-製版說明.txt`, S.plateNote(p.inks, grays, r.W, r.H, r.dpi));
     zip.file(`${state.stem}-proof.png`, await toBlob($('proofCanvas')));

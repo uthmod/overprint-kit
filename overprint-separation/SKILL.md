@@ -15,7 +15,7 @@ Input: an image plus a four-ink `palette.json` (from 疊印色盤, the matrix pa
 ## Steps
 
 1. `python separate.py <image.png> <palette.json> [--penalty 6]` — about 10 s. Writes next to the image:
-   `<name>-plate1..4-<ink>.png` (greyscale, in print order: black = solid ink, grey = a screened area at its tint for the
+   `<name>-plate1..4-<ink>.tif` (greyscale TIFF, PackBits, in print order: black = solid ink, grey = a screened area at its tint for the
    plate-maker's RIP, white = no ink), `<name>-proof.png` (the inks recombined in the palette's colours, screens shown as dots),
    `<name>-製版說明.txt` (for the plate-maker: what the greys mean, size and dpi, each plate's angle and tints),
    `<name>-sheet.png` (original | proof over the four plates) and `<name>-lines.png` (the shape outlines it traced).
@@ -56,7 +56,7 @@ Input: an image plus a four-ink `palette.json` (from 疊印色盤, the matrix pa
 - `--screen MASK:PCT` (e.g. `--screen 4:60`): print every pixel of that printable colour as PCT% dots instead (the whole colour, everywhere).
   A screen only mixes between its two cells; it can never go past the solid overprint.
 - Screens are not dotted on the plates: a screened area is a flat grey at its tint (50% → grey 128), saved as plain greyscale
-  with no colour profile, so the plate-maker's RIP screens it with its own, finer dots and its own dot-gain curve. Tell the user
+  TIFF with no colour profile (PackBits, baseline TIFF that every RIP reads), so the plate-maker's RIP screens it with its own, finer dots and its own dot-gain curve. Tell the user
   to hand the plates and `製版說明.txt` to the plate-maker. Only the proof draws dots, as a preview: round, 80 lpi at the
   printed size, at per-ink angles (15/75/45/0°, also listed in the note), with no dot-gain curve. `--width CM` is the printed
   width of the whole picture; without it the plates are taken to print at 600 dpi (the size the output line reports). Plates
