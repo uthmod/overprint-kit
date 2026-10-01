@@ -319,7 +319,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="overprint-model.js?v=1"></script><!-- the 疊印色彩矩陣產生器's model + Pantone U table (scripts/overprint-model-entry.js); bump ?v= on rebuild -->
-<script src="separate.js?v=18"></script><!-- bump ?v= whenever separate.js changes: a cached old copy breaks the new page -->
+<script src="separate.js?v=20"></script><!-- bump ?v= whenever separate.js changes: a cached old copy breaks the new page -->
 <script>
 // This round's ballot sets as palette.json (fetched from the kit's palette link when the page was built), and the sample
 // (lossless WebP: a lossy copy's compression noise came out as rough edges and a lost hand).
@@ -489,7 +489,7 @@ async function run() {
       state.pending = false;
       const penalty = +document.querySelector('input[name="penalty"]:checked').value;
       const t = performance.now(), list = state.screens.slice();
-      const r = await S.labels(state.rgb, state.w, state.h, S.withScreens(state.palette, list), {
+      const r = await S.labelsInWorker(state.rgb, state.w, state.h, S.withScreens(state.palette, list), {
         penalty,
         onStage: (s) => { setStatus(`分色中：${s}…`); return new Promise((ok) => setTimeout(ok, 16)); }, // let the line paint
       });

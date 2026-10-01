@@ -3,7 +3,7 @@
 // pixel at SCALE× (2×) the image size (labels 0–15 are the palette's colours, each its own ink mask; screened colours follow);
 // printMasks turns them into ink masks with halftone dots, and plate b is (mask >> b) & 1 (bit 0 = the first ink printed).
 // Plain script: window.OverprintSeparate in a page, module.exports in Node (the parity check against separate.py).
-(function (root) {
+(function factory(root) {
   'use strict';
 
   const SCALE = 2; // as separate.py: art at 600 dpi → 1200 dpi plates
@@ -285,24 +285,23 @@
   }
 
   // ---------- fine dark features the steps above lost (hair strands, a rose's spiral) ----------
-  /** Max (dilate) or min (erode) over an 11×11 OpenCV ellipse, per channel; out-of-image pixels are ignored. */
+  /** Max (dilate) or min (erode) over an 11×11 OpenCV ellipse, per channel; out-of-image pixels are ignored.
+   *  src holds 0–255, so bytes keep it exact (Float64 copies took ~1.2 GB and ~15 s on the A6 sample). */
   const ELLIPSE = [0, 3, 4, 5, 5, 5, 5, 5, 4, 3, 0]; // half-width per row, rows -5..5
   function morph(src, w, h, max) {
-    const out = new Float64Array(src.length), rows = {}, pick = max ? Math.max : Math.min, none = max ? -Infinity : Infinity;
+    if (!max) return morph(src.map((v) => 255 - v), w, h, true).map((v) => 255 - v); // min = the max of the negative
+    const out = new Uint8Array(src.length), rows = {};
     for (const hw of new Set(ELLIPSE)) {
-      const a = (rows[hw] = new Float64Array(src.length));
+      const a = (rows[hw] = new Uint8Array(src.length));
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) for (let c = 0; c < 3; c++) {
-        let v = none;
-        for (let xx = Math.max(0, x - hw); xx <= Math.min(w - 1, x + hw); xx++) v = pick(v, src[(y * w + xx) * 3 + c]);
+        let v = 0;
+        for (let xx = Math.max(0, x - hw), e = Math.min(w - 1, x + hw); xx <= e; xx++) { const s = src[(y * w + xx) * 3 + c]; if (s > v) v = s; }
         a[(y * w + x) * 3 + c] = v;
       }
     }
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) for (let c = 0; c < 3; c++) {
-      let v = none;
-      for (let dy = -5; dy <= 5; dy++) {
-        const yy = y + dy;
-        if (yy >= 0 && yy < h) v = pick(v, rows[ELLIPSE[dy + 5]][(yy * w + x) * 3 + c]);
-      }
+      let v = 0;
+      for (let dy = Math.max(-5, -y), e = Math.min(5, h - 1 - y); dy <= e; dy++) { const s = rows[ELLIPSE[dy + 5]][((y + dy) * w + x) * 3 + c]; if (s > v) v = s; }
       out[(y * w + x) * 3 + c] = v;
     }
     return out;
@@ -311,7 +310,7 @@
   /** How much darker each pixel is than its surroundings (a closing wipes out anything dark narrower than FINE_PX),
    *  at the original size, then bilinearly upscaled the way cv2.resize does. */
   function darkness(rgb, w, h, W, H) {
-    const a = Float64Array.from(rgb), bg = morph(morph(a, w, h, true), w, h, false), small = new Float32Array(w * h), t = [0, 0, 0], u = [0, 0, 0];
+    const bg = morph(morph(rgb, w, h, true), w, h, false), small = new Float32Array(w * h), t = [0, 0, 0], u = [0, 0, 0];
     for (let i = 0; i < w * h; i++) {
       labF(bg[i * 3], bg[i * 3 + 1], bg[i * 3 + 2], t, 0);
       labInt(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2], u, 0);
@@ -491,6 +490,30 @@
     return { idx, W, H, de: de / (W * H), lines: notLine, shape, w, h };
   }
 
+  /** labels() on a Web Worker built from this same file, so the page still answers clicks during the half minute it
+   *  takes (on the page's thread one step ran 20 s without a break: tabs and buttons froze). Same code, same result.
+   *  Where workers are refused (a strict page policy, an old browser), it runs on the page's thread as before. */
+  function labelsInWorker(rgb, w, h, palette, opts) {
+    const o = opts || {}, here = () => labels(rgb, w, h, palette, o);
+    let worker;
+    try {
+      worker = new Worker(URL.createObjectURL(new Blob([`(${factory})(self);
+onmessage = async ({ data: [rgb, w, h, palette, penalty] }) => {
+  try { postMessage({ r: await self.OverprintSeparate.labels(rgb, w, h, palette, { penalty, onStage: (stage) => postMessage({ stage }) }) }); }
+  catch (err) { postMessage({ error: String(err && err.message || err) }); }
+};`], { type: 'text/javascript' })));
+    } catch { return here(); }
+    return new Promise((ok, fail) => {
+      worker.onmessage = ({ data }) => {
+        if (data.stage) { if (o.onStage) o.onStage(data.stage); return; }
+        worker.terminate();
+        if (data.error) fail(new Error(data.error)); else ok(data.r);
+      };
+      worker.onerror = (e) => { e.preventDefault(); worker.terminate(); here().then(ok, fail); }; // could not start
+      worker.postMessage([rgb, w, h, palette, o.penalty]);
+    });
+  }
+
   // ---------- printing: halftone dots, then plates and the proof ----------
   /** Whether plate pixel (X, Y) falls inside a round halftone dot covering pct, pitch plate px apart at the ink's own
    *  angle. The same plain arithmetic as separate.py's screen(), so the dots match bit for bit. */
@@ -589,7 +612,7 @@
     return '﻿' + lines.join('\n') + '\n'; // BOM: older Windows editors read the Chinese right
   }
 
-  const api = { SCALE, INK_PENALTY, LPI, DPI, parsePalette, withScreens, labels, screenArea, printMasks, proof, plateTone, plateNote, _test: { upscale, modeFilter, components, trace, morph } };
+  const api = { SCALE, INK_PENALTY, LPI, DPI, parsePalette, withScreens, labels, labelsInWorker, screenArea, printMasks, proof, plateTone, plateNote, _test: { upscale, modeFilter, components, trace, morph } };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.OverprintSeparate = api;
 })(globalThis);
