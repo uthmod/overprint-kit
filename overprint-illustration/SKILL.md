@@ -42,6 +42,9 @@ prompts and hex colours do best; GPT Image 2 did best in our trials.
 - **Lineless cut-paper** (the cleanest separations): replace block 5 with `NO outlines, NO line art; forms are flat overlapping colour shapes, overlaps overprint into a darker third colour; details are small solid shapes of another ink` and add `let shapes overlap on purpose: A over B`. Two touching shapes of the same ink merge into one, so give neighbours different inks or a bare-paper gap.
 - **Colour map** (a busier scene that shows all 15 colours): replace blocks 6–7 with `Colour map: use EVERY ONE of these 15 colours, each for the listed parts.` then one line per colour, `#hex <look>: <parts>`, plus a `Bare paper <paper>: <parts>` line. Give each overlap colour a flat area of its own (hair, a dress, a hedgehog), not a tiny detail: small cells drift to a neighbouring colour. About 30% bare paper holds up.
 - **Redrawing an existing image:** upload it as the reference image and start with `Redraw the reference image …` plus the colour map. For a one-thing fix: `Keep the reference image exactly as it is … Change ONLY the X`.
+  Name the colour of every element even when the reference already shows it: without that, a redraw drifts to the usual look
+  (Alice came back with yellow hair, a pink dress and a white apron). To get a bigger copy of an image, redraw it at a higher
+  resolution this way (see firefly.md for sizes), then separate the new copy and compare it with the old one.
 
 ### What goes wrong
 

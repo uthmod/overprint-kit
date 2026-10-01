@@ -22,6 +22,9 @@ Input: an image plus a four-ink `palette.json` (from 疊印色盤, the matrix pa
    - blotchy fills → the art is shaded; regenerate it with a stronger flat-fill clause (疊印插畫) rather than tuning this script;
    - outlines lost where they sat on a fill of the same ink → expected unless the art left a bare-paper keyline; say so;
    - stray specks on a plate, or whole areas flipping to paper → the knobs below.
+   - a new or bigger copy of an art you separated before can land differently: a fill a few RGB off can cross the switch to
+     a 3-ink overprint (a pale mint going sage at penalty 5), and `FINE_PX` counts the image's own pixels, so two-tone petals
+     that printed one shade darker at 1264 px wide were plain pink at 1636 px. Compare it with the old proof, crop by crop.
    Done when every problem you found is either fixed or named in the report.
 3. Show the user the sheet and report: what separated cleanly, what was lost, and which knobs you used.
 
