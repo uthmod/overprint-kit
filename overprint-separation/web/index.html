@@ -174,12 +174,12 @@
   <div class="press" aria-hidden="true"></div>
 
   <div class="tabs" role="tablist" aria-label="工具">
-    <button type="button" role="tab" id="tabbtn-palette" aria-controls="tab-palette" aria-selected="true">色盤產生器</button>
-    <button type="button" role="tab" id="tabbtn-separate" aria-controls="tab-separate" aria-selected="false" tabindex="-1">分色</button>
+    <button type="button" role="tab" id="tabbtn-palette" aria-controls="tab-palette" aria-selected="false" tabindex="-1">色盤產生器</button>
+    <button type="button" role="tab" id="tabbtn-separate" aria-controls="tab-separate" aria-selected="true">分色</button>
     <button type="button" role="tab" id="tabbtn-ai" aria-controls="tab-ai" aria-selected="false" tabindex="-1">用 AI 助理分色</button>
   </div>
 
-  <main class="bench" id="tab-separate" role="tabpanel" aria-labelledby="tabbtn-separate" hidden>
+  <main class="bench" id="tab-separate" role="tabpanel" aria-labelledby="tabbtn-separate">
     <section class="ticket" aria-label="分色設定">
       <div class="field">
         <h2><span>1</span>您的圖</h2>
@@ -312,7 +312,7 @@
     </section>
   </main>
 
-  <section class="bench" id="tab-palette" role="tabpanel" aria-labelledby="tabbtn-palette">
+  <section class="bench" id="tab-palette" role="tabpanel" aria-labelledby="tabbtn-palette" hidden>
     <div class="ticket">
       <div class="field">
         <h2><span>1</span>從現成色盤開始</h2>
@@ -1052,7 +1052,7 @@ $('fitBtn').addEventListener('click', async () => {
   }
 });
 
-// ---------- start: the sample, loaded but not separated (「分色範例圖」 separates it: ~19 s and ~750 MB on a page that opens on 色盤產生器) ----------
+// ---------- start: the sample, loaded but not separated (「分色範例圖」 separates it: ~19 s and ~750 MB, too heavy to start unasked; the page opens on 分色) ----------
 if (window.claude && window.claude.use) {
   window.claude.use('downloads').then((dl) => { if (!dl) $('downloadBtn').hidden = true; }); // no save dialog in this view
 }
