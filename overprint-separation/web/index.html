@@ -113,6 +113,7 @@
     font: 600 18px/1.3 var(--body); color: var(--muted); cursor: pointer; }
   .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--gold); }
   .tabs button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  @media (max-width: 560px) { .tabs button { padding-inline: 12px; } } /* three tabs on one row on a phone */
   /* 色盤產生器 */
   .presets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
   .preset { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 10px; border: 1px solid var(--rule); background: var(--sheet);
@@ -149,6 +150,11 @@
   .help summary:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   .helpbody { display: grid; gap: 10px; }
   #screens { max-width: 560px; } /* 網點 sits in the wide result column: keep its rows ticket-width */
+  /* 用 AI 助理分色: one reading column */
+  .guide { display: grid; gap: 28px; max-width: 42rem; }
+  .guide > div { display: grid; gap: 10px; border-top: 2px solid var(--ink); padding-top: 12px; }
+  .guide p { margin: 0; }
+  .guide a { color: var(--gold); }
   @media (prefers-reduced-motion: no-preference) { .btn { transition: background-color 0.15s ease-out; } }
 </style>
 
@@ -163,6 +169,7 @@
   <div class="tabs" role="tablist" aria-label="工具">
     <button type="button" role="tab" id="tabbtn-palette" aria-controls="tab-palette" aria-selected="true">色盤產生器</button>
     <button type="button" role="tab" id="tabbtn-separate" aria-controls="tab-separate" aria-selected="false" tabindex="-1">分色</button>
+    <button type="button" role="tab" id="tabbtn-ai" aria-controls="tab-ai" aria-selected="false" tabindex="-1">用 AI 助理分色</button>
   </div>
 
   <main class="bench" id="tab-separate" role="tabpanel" aria-labelledby="tabbtn-separate" hidden>
@@ -329,13 +336,34 @@
     </div>
   </section>
 
+  <section class="guide" id="tab-ai" role="tabpanel" aria-labelledby="tabbtn-ai" hidden>
+    <div>
+      <h2>讓 AI 助理幫您分色</h2>
+      <p>Claude Code 是 Anthropic 的 AI 助理，裝在您的電腦上，您可以用平常說話的方式請它幫忙做事。疊印工具包裡有三個技能（skill）：疊印色盤、疊印插畫和分色。技能就是寫給 AI 助理看的作業步驟，不是可以直接打開的程式。裝好以後，您只要說「用 palette.json 幫我把 art.png 分色」，Claude 就會照分色技能的步驟做完，再把結果拿給您看。</p>
+    </div>
+    <div>
+      <h2>用 AI 助理分色的好處</h2>
+      <ul class="tips">
+        <li><b>印版和這個頁面一樣。</b>分色技能和這個頁面用同一套算法，我們用五張範例圖比對過，兩邊分出的印版每一點都相同。</li>
+        <li><b>沒有圖片大小的限制。</b>這個頁面在電腦上最多處理大約 900 萬像素的圖，在手機和平板上大約 400 萬像素，更大的圖會先縮小，很細的淡色線可能因此不見。Claude Code 用原尺寸分色，海報這類大尺寸，也能照 600 dpi 的圖做出 1200 dpi 的印版。</li>
+        <li><b>它會自己檢查，有問題就調整。</b>分色後，Claude 會把原圖和印刷模擬放大對照，找色塊不平、線條不見、多出雜點的地方，需要時調整設定再分一次。最後它會用平常的話告訴您：哪裡分得乾淨、哪裡有損失、用了哪些設定。</li>
+        <li><b>進階選項，用說的就好。</b>例如「把臉印成 50% 的網點」、「把所有淺藍色都印成網點」，或「照 A 色盤分色，但改用 B 色盤的油墨印」。後兩個是這個頁面沒有的選項。Claude 會換成對應的設定，您不用記任何指令。</li>
+        <li><b>圖不適合分色時，它可以幫您重畫一張。</b>有漸層、陰影、筆刷紋理，或用了色盤以外顏色的圖，分出來會一塊一塊的。這時 Claude 可以改用疊印插畫技能：照您的色盤寫好繪圖指令，交給 Adobe Firefly 等 AI 繪圖工具，拿您的圖當參考，重畫成只用色盤 16 種顏色的平塗插畫，再把新的圖分色。電腦上有 Chrome 和 Claude in Chrome 擴充功能的話，Claude 可以自己操作 Firefly；沒有的話，它會把指令交給您，貼到您常用的繪圖工具。</li>
+        <li><b>也能幫您挑油墨。</b>疊印色盤技能會算出四支油墨疊印出來的 16 種顏色，提醒哪兩格太像、印出來分不清楚，也能幫您找出包含某支油墨的色盤，例如「幫我找一組有 806 U 的四色色盤」。</li>
+      </ul>
+    </div>
+    <div id="claude-code">
+      <h2>怎麼開始</h2>
+      <ul class="tips">
+        <li><b>先安裝 Claude Code。</b>在電腦上安裝 Claude Code（<a href="https://claude.com/claude-code" target="_blank" rel="noopener">claude.com/claude-code</a>）。使用 Claude Code 需要 Anthropic 的帳號，方案和費用請看官網。電腦上也要有 Python 3.10 以上；第一次分色時，Claude 會自己安裝需要的套件。</li>
+        <li><b>再放入技能。</b>把工具包裡的三個技能資料夾，放進 Claude Code 的 skills 資料夾，再重新開啟 Claude Code（工具包的 README 有步驟）。</li>
+        <li><b>然後請它分色。</b>用平常說話的方式，例如對 Claude 說：「用 palette.json 幫我把 art.png 分色」（palette.json 是色盤檔，art.png 是您的圖）。</li>
+        <li><b>想重畫時，也用說的。</b>例如：「這張圖分色後色塊不平，請照 palette.json 用 Firefly 重畫一張適合分色的」。用 Firefly 需要 Adobe 帳號，每次生成會用掉生成點數。</li>
+      </ul>
+    </div>
+  </section>
+
   <footer>
-    <p style="margin:0" id="claude-code"><b>用 Claude Code 分色：</b>Claude Code 是 Anthropic 的 AI 助理，您可以用平常說話的方式請它幫忙做事。疊印工具包裡另有一個「分色」技能（skill），就是寫給 AI 助理看的作業步驟，不是可以直接打開的程式。它和這個頁面用同一套算法，我們用五張範例圖比對過，兩邊分出的印版每一點都相同。它沒有圖片大小的限制，也多了幾個進階選項。</p>
-<ul class="tips">
-  <li><b>先安裝。</b>在電腦上安裝 Claude Code。</li>
-  <li><b>再放入技能。</b>把工具包裡的技能資料夾，放進 Claude Code 的 skills 資料夾（工具包的 README 有步驟）。</li>
-  <li><b>然後請它分色。</b>用平常說話的方式，例如對 Claude 說：「用 palette.json 幫我把 art.png 分色」（palette.json 是色盤檔，art.png 是您的圖）。</li>
-</ul>
     <p style="margin:0">工具包的原始碼（程式碼）：<a href="https://github.com/uthmod/overprint-kit" target="_blank" rel="noopener">github.com/uthmod/overprint-kit</a>（授權：CC BY-NC 4.0，姓名標示－非商業性）・<a href="https://teleportpress-letterpress-user-docu.vercel.app/#overprint-vote" target="_blank" rel="noopener">時分印刷 TeleportPress</a></p>
   </footer>
 </div>
@@ -808,11 +836,12 @@ async function saveFile(filename, blob) {
 }
 
 // ---------- tabs ----------
+const TABS = ['palette', 'separate', 'ai']; // tab-bar order
 function showTab(name) {
-  // The two tabs differ a lot in height (分色 is 2–3× taller), so switching while scrolled down made the browser snap the
+  // The tabs differ a lot in height (分色 is 2–3× taller), so switching while scrolled down made the browser snap the
   // page: keep the tab bar where it was on screen, or at the top if it had scrolled out of view.
   const bar = document.querySelector('.tabs'), at = Math.max(0, bar.getBoundingClientRect().top);
-  for (const t of ['separate', 'palette']) {
+  for (const t of TABS) {
     const on = t === name;
     $(`tabbtn-${t}`).setAttribute('aria-selected', String(on));
     $(`tabbtn-${t}`).tabIndex = on ? 0 : -1;
@@ -821,12 +850,17 @@ function showTab(name) {
   window.scrollTo(0, scrollY + bar.getBoundingClientRect().top - at);
   if (name === 'separate' && state.thumbStale) state.result ? show(state.result) : drawOrig(); // previews drawn while hidden
 }
-$('tabbtn-separate').addEventListener('click', () => showTab('separate'));
-$('tabbtn-palette').addEventListener('click', () => showTab('palette'));
-document.querySelector('.tabs').addEventListener('keydown', (e) => { // arrow keys move between the two tabs
+for (const t of TABS) $(`tabbtn-${t}`).addEventListener('click', () => showTab(t));
+document.querySelector('.tabs').addEventListener('keydown', (e) => { // arrow keys move between the tabs, wrapping at the ends
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-  const next = $('tabbtn-separate').getAttribute('aria-selected') === 'true' ? 'palette' : 'separate';
+  const i = TABS.findIndex((t) => $(`tabbtn-${t}`).getAttribute('aria-selected') === 'true');
+  const next = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length];
   showTab(next); $(`tabbtn-${next}`).focus();
+});
+// 「怎麼用」 links point at 怎麼開始 inside the AI tab: open the tab first, or the jump lands on a hidden element
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('a[href="#claude-code"]')) return;
+  e.preventDefault(); showTab('ai'); $('claude-code').scrollIntoView();
 });
 
 // ---------- 色盤產生器: the 疊印色彩矩陣產生器's own model (overprint-model.js), then 分色 with the result ----------
