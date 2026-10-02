@@ -150,9 +150,16 @@
   .help summary:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   .helpbody { display: grid; gap: 10px; }
   #screens { max-width: 560px; } /* 網點 sits in the wide result column: keep its rows ticket-width */
-  /* 用 AI 助理分色: one reading column */
-  .guide { display: grid; gap: 28px; max-width: 42rem; }
-  .guide > div { display: grid; gap: 10px; border-top: 2px solid var(--ink); padding-top: 12px; }
+  /* 用 AI 助理分色: two columns on a wide screen so the whole tab fits one screen (what + how on the left, why on the right);
+     one reading column on a phone, in source order */
+  .guide { display: grid; gap: 28px 40px; max-width: 42rem; }
+  @media (min-width: 861px) {
+    .guide { max-width: none; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto 1fr; grid-template-areas: "what why" "start why"; }
+    .guide > :nth-child(1) { grid-area: what; }
+    .guide > :nth-child(2) { grid-area: why; }
+    .guide > :nth-child(3) { grid-area: start; }
+  }
+  .guide > div { display: grid; gap: 10px; align-content: start; border-top: 2px solid var(--ink); padding-top: 12px; }
   .guide p { margin: 0; }
   .guide a { color: var(--gold); }
   @media (prefers-reduced-motion: no-preference) { .btn { transition: background-color 0.15s ease-out; } }
